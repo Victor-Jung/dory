@@ -20,6 +20,9 @@
 
 #include "${func_name}.h"
 #include "pulp_nnx.h"
+#ifdef GVSOC_LOGGING
+#include "pulp_nnx_util.h"
+#endif GVSOC_LOGGING
 % if ULTRA_VERBOSE:
 // #define VERBOSE_PRINT(...) printf(__VA_ARGS__)
 #define VERBOSE_PRINT(...)
@@ -132,31 +135,6 @@ void ${func_name}(
   int store_db_y;
   volatile pi_cl_dma_copy_t copy_k;
   volatile pi_cl_dma_copy_t copy_lambda;
-  volatile nnx_task_t nnx_task, nnx_task_remainder;
-  volatile nnx_weights_t nnx_weights = {
-    NULL,
-    ${x_tile_size_h},
-    ${x_tile_size_w},
-    ${x_tile_size_nif},
-    ${y_tile_size_nof},
-    8,
-    -128,
-    weightOffsetModeLayerWise
-  };
-  volatile nnx_feature_t nnx_input = {
-    NULL,
-    ${x_tile_size_h},
-    ${x_tile_size_w},
-    ${x_tile_size_nif},
-    featureBitwidth8Bit
-  };
-  volatile nnx_feature_t nnx_output = {
-    NULL,
-    ${y_tile_size_h},
-    ${y_tile_size_w},
-    ${y_tile_size_nof},
-    featureBitwidth8Bit
-  };
 
   // double buffering state
   int db_state_x=0;
@@ -174,10 +152,6 @@ void ${func_name}(
   uint16_t out_shift = out_shift_in;
 % endif
 
-  // init accelerated task
-  nnx_soft_clear();
-  nnx_task_init(&nnx_task);
-  // do not reinit -- simply update the pointers
 % if tile_dim_nof * tile_dim_h * tile_dim_w * tile_dim_nif == 1:
   // no double buffering if there is a single tile
   db_x   = 0;
@@ -190,7 +164,57 @@ void ${func_name}(
   db_y   =  db_state_y ? ${y_tile_size_byte} : 0;
   db_act =  db_state_W ? ${k_tile_size_byte_transfer} : 0;
 % endif
+
+  volatile nnx_task_t nnx_task, nnx_task_remainder;
+  // init accelerated task
+  nnx_soft_clear();
+  nnx_task_init(&nnx_task);
+
+  volatile nnx_weights_t nnx_weights = {
+    (l1_buffer + ${l1_W_offset}) + db_W,
+    ${x_tile_size_h},
+    ${x_tile_size_w},
+    ${x_tile_size_nif},
+    ${y_tile_size_nof},
+    8,
+    -128,
+    weightOffsetModeLayerWise
+  };
+  volatile nnx_feature_t nnx_input = {
+    (l1_buffer + ${l1_x_offset}) + db_x,
+    ${x_tile_size_h},
+    ${x_tile_size_w},
+    ${x_tile_size_nif},
+    featureBitwidth8Bit
+  };
+  volatile nnx_feature_t nnx_output = {
+    (l1_buffer + ${l1_y_offset}) + db_y,
+    ${y_tile_size_h},
+    ${y_tile_size_w},
+    ${y_tile_size_nof},
+    featureBitwidth8Bit
+  };
+
   nnx_pointwise(&nnx_task, nnx_weights, nnx_input, nnx_output);
+
+  // PULP-NN like defaults
+  nnx_norm_t norm;
+  norm.mode  = normMode32Bit;
+  norm.scale = (l1_buffer + ${l1_k_offset}) + db_act;
+  norm.bias  = (l1_buffer + ${l1_lambda_offset}) + db_act;
+  norm.shift = NE16_NULL;
+
+  nnx_quant_t quant;
+  quant.shift_amount = out_shift;
+  quant.mode = quantMode8Bit;
+  quant.function = quantFunctionRelu;
+  quant.use_rounding = 0;
+
+  nnx_norm_quant(&nnx_task, norm, quant);
+
+#ifdef GVSOC_LOGGING
+  nnx_activate_gvsoc_logging(1);
+#endif
   VERBOSE_PRINT("Acquire iter=PRE\n");
   int id = nnx_acquire();
   nnx_offload(&nnx_task);
@@ -433,15 +457,25 @@ void ${func_name}(
 
       nnx_task_init(&nnx_task_remainder);
       nnx_pointwise(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output);
+      // PULP-NN like defaults
+      nnx_norm_t norm;
+      norm.mode  = normMode32Bit;
+      norm.scale = (l1_buffer + ${l1_k_offset}) + db_act;
+      norm.bias  = (l1_buffer + ${l1_lambda_offset}) + db_act;
+      norm.shift = NE16_NULL;
+      nnx_quant_t quant;
+      quant.shift_amount = out_shift;
+      quant.mode = quantMode8Bit;
+      quant.function = quantFunctionRelu;
+      quant.use_rounding = 0;
+      nnx_norm_quant(&nnx_task_remainder, norm, quant);
+#ifdef GVSOC_LOGGING
+      nnx_activate_gvsoc_logging(1);
+#endif
 
       VERBOSE_PRINT("    nb_KoKi=%08x nb_HoWo=%08x\n", nnx_task_remainder.cfg.subtile.number.KoKi, nnx_task_remainder.cfg.subtile.number.HoWo);      
 
       if(nnx_task_remainder.cfg.subtile.number.KoKi != 0 && nnx_task_remainder.cfg.subtile.number.HoWo != 0) {
-        nnx_task_remainder.weights_ptr     = (l1_buffer + ${l1_W_offset}) + exec_db_W;
-        nnx_task_remainder.infeat_ptr      = (l1_buffer + ${l1_x_offset}) + exec_db_x;
-        nnx_task_remainder.outfeat_ptr     = (l1_buffer + ${l1_y_offset}) + db_y;
-        nnx_task_remainder.scale_ptr       = (l1_buffer + ${l1_k_offset}) + db_act;
-        nnx_task_remainder.scale_bias_ptr  = (l1_buffer + ${l1_lambda_offset}) + db_act;
         VERBOSE_PRINT("Acquire iter=%d total=%d\n", iter, total_tiles);
         int id = nnx_acquire();
         VERBOSE_PRINT("  Job_id=%d\n", id);
