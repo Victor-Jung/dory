@@ -19,7 +19,7 @@
  */
 
 #include "${func_name}.h"
-#include "pulp_nnx_hal.h"
+#include "pulp_nnx.h"
 % if ULTRA_VERBOSE:
 // #define VERBOSE_PRINT(...) printf(__VA_ARGS__)
 #define VERBOSE_PRINT(...)
@@ -190,17 +190,12 @@ void ${func_name}(
   db_y   =  db_state_y ? ${y_tile_size_byte} : 0;
   db_act =  db_state_W ? ${k_tile_size_byte_transfer} : 0;
 % endif
-  pulp_nnx_pointwise_init(&nnx_task, nnx_weights, nnx_input, nnx_output, out_shift);
-  nnx_task.weights_ptr     = (l1_buffer + ${l1_W_offset}) + db_W;
-  nnx_task.infeat_ptr      = (l1_buffer + ${l1_x_offset}) + db_x;
-  nnx_task.outfeat_ptr     = (l1_buffer + ${l1_y_offset}) + db_y;
-  nnx_task.scale_ptr       = (l1_buffer + ${l1_k_offset}) + db_act;
-  nnx_task.scale_bias_ptr  = (l1_buffer + ${l1_lambda_offset}) + db_act;
+  nnx_pointwise(&nnx_task, nnx_weights, nnx_input, nnx_output);
   VERBOSE_PRINT("Acquire iter=PRE\n");
-  int id = pulp_nnx_pointwise_acquire();
-  pulp_nnx_pointwise_offload(&nnx_task);
+  int id = nnx_acquire();
+  nnx_offload(&nnx_task);
 % if tile_dim_nof * tile_dim_h * tile_dim_w * tile_dim_nif != 1:
-  nnx_job_commit();
+  nnx_commit();
 % endif
   VERBOSE_PRINT("  Job_id=%d\n", id);
 
@@ -437,7 +432,7 @@ void ${func_name}(
       VERBOSE_PRINT("    Ko=%d Ki=%d Ho=%d Wo=%d Hi=%d Wi=%d\n", nnx_weights.n_weights, nnx_weights.depth, nnx_output.height, nnx_output.width, nnx_input.height, nnx_input.width);
 
       nnx_task_init(&nnx_task_remainder);
-      pulp_nnx_pointwise_init(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output, out_shift);
+      nnx_pointwise(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output);
 
       VERBOSE_PRINT("    nb_KoKi=%08x nb_HoWo=%08x\n", nnx_task_remainder.cfg.subtile.number.KoKi, nnx_task_remainder.cfg.subtile.number.HoWo);      
 
@@ -448,10 +443,9 @@ void ${func_name}(
         nnx_task_remainder.scale_ptr       = (l1_buffer + ${l1_k_offset}) + db_act;
         nnx_task_remainder.scale_bias_ptr  = (l1_buffer + ${l1_lambda_offset}) + db_act;
         VERBOSE_PRINT("Acquire iter=%d total=%d\n", iter, total_tiles);
-        
-        int id = pulp_nnx_pointwise_acquire();
+        int id = nnx_acquire();
         VERBOSE_PRINT("  Job_id=%d\n", id);
-        pulp_nnx_pointwise_offload(&nnx_task_remainder);
+        nnx_offload(&nnx_task_remainder);
       }
       else {
         printf("ERROR CONDITION\n");
@@ -469,9 +463,9 @@ void ${func_name}(
       nnx_task.scale_bias_ptr  = (l1_buffer + ${l1_lambda_offset}) + db_act;
       VERBOSE_PRINT("Acquire iter=%d total=%d bool=%d\n", iter, total_tiles, iter<total_tiles-1);
 
-      int id = pulp_nnx_pointwise_acquire();
+      int id = nnx_acquire();
       VERBOSE_PRINT("  Job_id=%d\n", id);    
-      pulp_nnx_pointwise_offload(&nnx_task);
+      nnx_offload(&nnx_task);
     }
 
     y_tile_size_nof = (_i_nof_exec+1 == ${tile_dim_nof}) ? ${y_tile_size_nof_last} : ${y_tile_size_nof};
@@ -497,7 +491,7 @@ void ${func_name}(
 
     // run the layer on NE (non-blocking)
     if (iter == 0 || iter < total_tiles-1) {
-      pulp_nnx_pointwise_run();
+      nnx_run_async();
     }
 
     //  ######  ########  #######  ########  ######## 
@@ -518,11 +512,11 @@ void ${func_name}(
       
       // busy-wait until the next job is started
       if(iter != total_tiles-1)
-        nnx_job_wait_on_id(iter);
+        nnx_wait_on_id(iter);
 
       // in the last tile, wait for the end of the job
       if(iter == total_tiles-1)
-        nnx_job_wait();
+        nnx_wait();
 
 % if FLAG_BATCHNORM == 1:    
       if(iter < (total_tiles-1) && (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)) {                        
