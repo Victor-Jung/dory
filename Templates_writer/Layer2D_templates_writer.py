@@ -27,7 +27,6 @@ import os
 import re
 
 # accelerator-specific functions for NNX
-from ne16 import ne16_conv1x1_unroll
 from ne16 import ne16_conv1x1_pad_ki
 
 def print_template_layer(x, y_gold, W,

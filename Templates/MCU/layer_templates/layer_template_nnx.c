@@ -54,6 +54,7 @@ void ${func_name}(
   uint32_t dory_dma_channel = dory_dma_allocate();
   volatile DMA_copy DMA_copy_k, DMA_copy_lambda;
   volatile DMA_copy DMA_copy_W, DMA_copy_x, DMA_copy_y;
+
 % if has_bias == 1:
   volatile DMA_copy DMA_copy_bias;
   DMA_copy_bias.hwc_to_chw = 0;
@@ -61,8 +62,8 @@ void ${func_name}(
   DMA_copy_bias.stride_1d = 0;
   DMA_copy_bias.dir = 1;
   DMA_copy_bias.dma_channel = dory_dma_channel;
-
 % endif
+
   DMA_copy_k.hwc_to_chw = 0;
   DMA_copy_k.stride_2d = 0;
   DMA_copy_k.stride_1d = 0;
@@ -75,11 +76,12 @@ void ${func_name}(
   DMA_copy_lambda.dir = 1;
   DMA_copy_lambda.dma_channel = dory_dma_channel;
   
-  % if flag_DW == 1:
+% if flag_DW == 1:
   DMA_copy_x.hwc_to_chw = 1;
-  % else:
+% else:
   DMA_copy_x.hwc_to_chw = 0;
-  % endif  
+% endif  
+
   DMA_copy_x.stride_2d = ${x_stride_w_byte};
   DMA_copy_x.stride_1d = ${x_stride_c_byte};
   DMA_copy_x.dir = 1;
@@ -98,12 +100,14 @@ void ${func_name}(
   DMA_copy_y.dma_channel = dory_dma_channel;
 
   int p_r, p_l, p_t, p_b;
+
 % if tile_dim_nif*tile_dim_h*tile_dim_w != 1:
   unsigned short x_tile_size_nif;
   unsigned short x_tile_size_byte;
   unsigned short x_length_nif_byte;
   int pad_offset_h, pad_offset_w;
 % endif  
+
   unsigned short  x_tile_size_h;
   unsigned short  x_tile_size_w;
   unsigned short  W_tile_size_nof;
@@ -111,15 +115,17 @@ void ${func_name}(
   unsigned short  W_tile_size_byte;
   unsigned short W_length_nif_byte;
   ${type} *x, *W, *y, *b;
+
 % if FLAG_BATCHNORM == 1:
-% if act_dim_bit == 32:
+  % if act_dim_bit == 32:
   int32_t *k;
   int32_t *lambda;
-% else:
+  % else:
   int64_t *k;
   int64_t *lambda;
+  % endif
 % endif
-% endif
+
   int y_tile_size_nof;
   int y_tile_size_h;
   int y_tile_size_w;
@@ -145,9 +151,11 @@ void ${func_name}(
   // tile loop indeces
   int _i_nof_load=0, _i_nif_load=0, _i_h_load=0, _i_w_load=0;
   int _i_nof_exec=0, _i_nif_exec=0, _i_h_exec=0, _i_w_exec=0;
+
 % if has_bias == 1:
   int has_bias = 1;
 % endif
+
 % if FLAG_RELU == 1:
   uint16_t out_shift = out_shift_in;
 % endif
@@ -195,7 +203,7 @@ void ${func_name}(
     featureBitwidth8Bit
   };
 
-  nnx_pointwise(&nnx_task, nnx_weights, nnx_input, nnx_output);
+  nnx_conv_${fs1}x${fs2}(&nnx_task, nnx_weights, nnx_input, nnx_output);
 
   // PULP-NN like defaults
   nnx_norm_t norm;
@@ -218,9 +226,11 @@ void ${func_name}(
   VERBOSE_PRINT("Acquire iter=PRE\n");
   int id = nnx_acquire();
   nnx_offload(&nnx_task);
+
 % if tile_dim_nof * tile_dim_h * tile_dim_w * tile_dim_nif != 1:
   nnx_commit();
 % endif
+
   VERBOSE_PRINT("  Job_id=%d\n", id);
 
   ////////////////////////////
@@ -233,8 +243,8 @@ void ${func_name}(
   DMA_copy_bias.number_of_1d_copies = 1;
   DMA_copy_bias.length_1d_copy = (uint16_t) ${b_size_byte};
   dory_dma_memcpy_async(DMA_copy_bias);
-  
-  % endif
+% endif
+
 % if FLAG_BATCHNORM == 1:
   DMA_copy_k.ext = (uint32_t) l2_W+${l2_off_k};
   DMA_copy_k.loc = (uint32_t) l1_buffer + ${l1_k_offset};
@@ -254,6 +264,7 @@ void ${func_name}(
   DMA_copy_W.ext = l2_W;
   DMA_copy_W.loc = (l1_buffer + ${l1_W_offset}) + 0;
   DMA_copy_W.number_of_2d_copies = 1;
+
 %if tile_dim_nof == 1:
   DMA_copy_W.number_of_1d_copies = 1;
   DMA_copy_W.length_1d_copy = ${W_tile_size_nof * W_tile_nif_byte * fs1 * fs2};
@@ -261,6 +272,7 @@ void ${func_name}(
   DMA_copy_W.number_of_1d_copies = ${W_tile_size_nof};
   DMA_copy_W.length_1d_copy = ${W_tile_nif_byte * fs1 * fs2};
 %endif
+
   dory_dma_memcpy_async(DMA_copy_W);
 
   DMA_copy_x.ext = l2_x;
@@ -283,16 +295,18 @@ void ${func_name}(
 % else:
   int total_tiles = ${tile_dim_nof * tile_dim_h * tile_dim_w};
 % endif
+
   // tile loop nest
   for(iter=0; iter < total_tiles; iter++) {
 
-  % if tile_dim_nif != 1 and flag_DW == 0:
+% if tile_dim_nif != 1 and flag_DW == 0:
     // loop nest is nof,h,w,nif
     _i_nif_load += 1;
     if(_i_nif_load==${tile_dim_nif}) 
     {
       _i_nif_load = 0;
-  % endif
+% endif
+
       _i_w_load += 1;
       if(_i_w_load==${tile_dim_w}) 
       {
@@ -301,16 +315,18 @@ void ${func_name}(
         if(_i_h_load==${tile_dim_h}) 
         {
           _i_h_load = 0;
-      % if flag_DW == 1:
+
+% if flag_DW == 1:
         _i_nif_load += 1;
-      % endif
+% endif
+
           _i_nof_load += 1;
         }
       }
-  % if tile_dim_nif != 1 and flag_DW == 0:
+
+% if tile_dim_nif != 1 and flag_DW == 0:
     }
-  % endif
-    // check if last in any dimension
+% endif
 
 % if tile_dim_nof * tile_dim_h * tile_dim_w * tile_dim_nif == 1:
     // no double buffering if there is a single tile
@@ -321,36 +337,43 @@ void ${func_name}(
 % else:
     // compute double buffering offsets and update db state
     db_x = !db_state_x ? ${x_tile_size_byte} : 0;
-## At this stage, this switch is a bit empirical...
-% if tile_dim_nof == 1:
+
+  ## At this stage, this switch is a bit empirical...
+  % if tile_dim_nof == 1:
     db_W =  db_state_W ? ${W_tile_size_byte} : 0;
-% else:
+  % else:
     db_W = !db_state_W ? ${W_tile_size_byte} : 0;
-% endif
+  % endif
+
     db_y = !db_state_y ? ${y_tile_size_byte} : 0;
+
   % if FLAG_BATCHNORM == 1:
     if (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)
       db_act = !db_state_W ? ${k_tile_size_byte_transfer} : 0;
     else
-      db_act = db_state_W ? ${k_tile_size_byte_transfer} : 0;
+      db_act =  db_state_W ? ${k_tile_size_byte_transfer} : 0;
   % endif
 % endif
-  % if tile_dim_nif*tile_dim_h*tile_dim_w != 1:
+
+% if tile_dim_nif * tile_dim_h * tile_dim_w != 1:
     exec_db_x = !db_state_x ? ${x_tile_size_byte} : 0;
-  % else:
+% else:
     exec_db_x = 0;
-  % endif
-    db_state_x = ! db_state_x;
-    if (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)
+% endif
+
+    db_state_x = !db_state_x;
+    if (_i_nif_load != _i_nif_exec || _i_nof_load != _i_nof_exec)
       exec_db_W = !db_state_W ? ${W_tile_size_byte} : 0;
     else
-      exec_db_W = db_state_W ? ${W_tile_size_byte} : 0;
+      exec_db_W =  db_state_W ? ${W_tile_size_byte} : 0;
+
 % if FLAG_BATCHNORM == 1:
     exec_db_act = db_state_W ? ${k_tile_size_byte_transfer} : 0;
 % endif
+
     store_db_y = db_state_y ? ${y_tile_size_byte} : 0;
-    if (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)
-      db_state_W = ! db_state_W;
+    if (_i_nif_load != _i_nif_exec || _i_nof_load != _i_nof_exec)
+      db_state_W = !db_state_W;
     //switch all double buffering offset and y only after that all n_input_features have been analyzed: we need to pass all n_in to produce a single fil
 
     // double buffered reads
@@ -363,9 +386,10 @@ void ${func_name}(
     // ##       ##     ## ##     ## ##     ## 
     // ########  #######  ##     ## ########  
 
-    if(iter < (total_tiles-1) ) {
+    if(iter < total_tiles-1) {
       asm volatile("": : :"memory");
-    % if tile_dim_nif*tile_dim_h*tile_dim_w != 1:
+
+% if tile_dim_nif * tile_dim_h * tile_dim_w != 1:
       x_tile_size_nif = (_i_nif_load+1 == ${tile_dim_nif}) ? ${x_tile_size_nif_last} : ${x_tile_size_nif};
       x_tile_size_byte = x_tile_size_nif*x_tile_size_h*x_tile_size_w*${x_data_size_byte}/8;
       x_length_nif_byte = (_i_nif_load+1 == ${tile_dim_nif})   ? ${x_tile_size_nif_byte_last} : ${x_tile_size_nif_byte};
@@ -376,47 +400,54 @@ void ${func_name}(
         pad_offset_h = ${padding_top};
       if(_i_w_load > 0)
         pad_offset_w = ${padding_left};
-    % endif
+% endif
+
       x_tile_size_h   = (_i_h_load+1 == ${tile_dim_h})   ? ${x_tile_size_h_last} : ${x_tile_size_h};
       x_tile_size_w   = (_i_w_load+1 == ${tile_dim_w})   ? ${x_tile_size_w_last} : ${x_tile_size_w};
       y_tile_size_h   = (_i_h_load+1 == ${tile_dim_h})   ? ${y_tile_size_h_last} : ${y_tile_size_h};
       y_tile_size_w   = (_i_w_load+1 == ${tile_dim_w})   ? ${y_tile_size_w_last} : ${y_tile_size_w};
       W_tile_size_nof = (_i_nof_load+1 == ${tile_dim_nof}) ? ${W_tile_size_nof_last} : ${W_tile_size_nof};
       W_tile_size_nif = (_i_nif_load+1 == ${tile_dim_nif}) ? ${W_tile_size_nif_last} : ${W_tile_size_nif};
-    % if flag_DW == 1:
+
+% if flag_DW == 1:
       W_tile_size_byte = W_tile_size_nof*W_tile_size_nif*${fs1}*${fs2};
-    % else:
+% else:
       W_tile_size_byte = W_tile_size_nof*W_tile_size_nif*${W_data_size_byte}*${fs1}*${fs2}/8;
-    % endif
+% endif
+
       W_length_nif_byte = (_i_nif_load+1 == ${tile_dim_nif}) ? ${W_tile_size_nif_byte_last} : ${W_tile_nif_byte};
       // transfer of next input tile in double buffering
-    % if tile_dim_nif*tile_dim_h*tile_dim_w != 1:
 
+% if tile_dim_nif * tile_dim_h * tile_dim_w != 1:
       DMA_copy_x.ext = dory_get_tile_3d(l2_x, _i_h_load, _i_w_load, _i_nif_load, ${x_tile_size_h}, ${x_tile_size_w}, ${x_tile_size_nif}, ${x_w}, ${nif*g},  ${conv_overlap1}, ${conv_overlap2},0, pad_offset_h, pad_offset_w, 0, ${x_data_size_byte});
       DMA_copy_x.loc = (l1_buffer + ${l1_x_offset}) + db_x;
       DMA_copy_x.number_of_2d_copies = x_tile_size_h;
       DMA_copy_x.number_of_1d_copies = x_tile_size_w;
       DMA_copy_x.length_1d_copy = x_length_nif_byte;
       dory_dma_memcpy_async(DMA_copy_x);
-    % endif
+% endif
+
       // transfer of next weight tile if changed input or output channels
       if (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec) {
-      % if flag_DW == 0:
+% if flag_DW == 0:
         DMA_copy_W.ext = dory_get_tile_3d(l2_W, _i_nof_load, 0, _i_nif_load, ${W_tile_size_nof}, ${fs1}*${fs2}, ${W_tile_size_nif}, ${fs1}*${fs2}, ${nif}, 0,0,0,0,0,0, ${W_data_size_byte});
-      % else:
+% else:
         DMA_copy_W.ext = dory_get_tile_3d(l2_W, _i_nof_load, 0, 0, ${W_tile_size_nof*8/W_data_size_byte}, ${fs1}*${fs2}, ${W_tile_size_nif}, ${fs1}*${fs2}, ${nif}, 0,0,0,0,0,0, ${W_data_size_byte});
-      % endif
+% endif
+
         DMA_copy_W.loc = (l1_buffer + ${l1_W_offset}) + db_W;
-      %if tile_dim_nof == 1:
+
+% if tile_dim_nof == 1:
         DMA_copy_W.number_of_1d_copies = 1;
         DMA_copy_W.length_1d_copy = W_tile_size_nof * W_length_nif_byte;
-      %else:
+% else:
         DMA_copy_W.number_of_1d_copies = W_tile_size_nof;
         DMA_copy_W.length_1d_copy = W_length_nif_byte;
-      %endif
-        dory_dma_memcpy_async(DMA_copy_W);
-        % if FLAG_BATCHNORM == 1:
+% endif
 
+        dory_dma_memcpy_async(DMA_copy_W);
+
+% if FLAG_BATCHNORM == 1:
         DMA_copy_k.ext = (uint32_t) l2_W+${l2_off_k} + ${k_tile_size_byte_transfer}*_i_nof_load;
         DMA_copy_k.loc = (uint32_t) l1_buffer + ${l1_k_offset} + db_act;
         DMA_copy_k.length_1d_copy = (uint16_t) W_tile_size_nof * ${int(act_dim_bit/8)};
@@ -426,12 +457,13 @@ void ${func_name}(
         DMA_copy_lambda.loc = (uint32_t) l1_buffer + ${l1_lambda_offset} + db_act;
         DMA_copy_lambda.length_1d_copy = (uint16_t) W_tile_size_nof * ${int(act_dim_bit/8)};
         dory_dma_memcpy_async(DMA_copy_lambda);
-        % endif
+% endif
       }
     }
 
     // program NE in LOAD stage to take advantage of multi-context
-    if((iter < total_tiles-1) && (_i_nif_load+1 == ${tile_dim_nif} || _i_h_load+1 == ${tile_dim_h} || _i_w_load+1 == ${tile_dim_w} || _i_nof_load+1 == ${tile_dim_nof})) {
+    int is_border_tile = _i_nif_load+1 == ${tile_dim_nif} || _i_h_load+1 == ${tile_dim_h} || _i_w_load+1 == ${tile_dim_w} || _i_nof_load+1 == ${tile_dim_nof};
+    if((iter < total_tiles-1) && is_border_tile) {
 
       // reinit task data structure
       nnx_weights.data      = (l1_buffer + ${l1_W_offset}) + exec_db_W;
@@ -456,7 +488,7 @@ void ${func_name}(
       VERBOSE_PRINT("    Ko=%d Ki=%d Ho=%d Wo=%d Hi=%d Wi=%d\n", nnx_weights.n_weights, nnx_weights.depth, nnx_output.height, nnx_output.width, nnx_input.height, nnx_input.width);
 
       nnx_task_init(&nnx_task_remainder);
-      nnx_pointwise(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output);
+      nnx_conv_${fs1}x${fs2}(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output);
       // PULP-NN like defaults
       nnx_norm_t norm;
       norm.mode  = normMode32Bit;
@@ -517,8 +549,12 @@ void ${func_name}(
     // ######## ##     ## ########  ######
 
     if(iter == 0) {
+
+% if FLAG_BATCHNORM == 1:    
       dory_dma_barrier(DMA_copy_k);
       dory_dma_barrier(DMA_copy_lambda);
+% endif      
+
       dory_dma_barrier(DMA_copy_x);
       dory_dma_barrier(DMA_copy_W);
     }
@@ -539,11 +575,6 @@ void ${func_name}(
 % if tile_dim_nif != 1 and flag_DW == 0:
     if(_i_nif_load == 0) {
 % endif
-      // wait for DMA write/read
-      dory_dma_barrier(DMA_copy_y);
-      dory_dma_barrier(DMA_copy_x);
-      dory_dma_barrier(DMA_copy_W);
-      
       // busy-wait until the next job is started
       if(iter != total_tiles-1)
         nnx_wait_on_id(iter);
@@ -552,12 +583,6 @@ void ${func_name}(
       if(iter == total_tiles-1)
         nnx_wait();
 
-% if FLAG_BATCHNORM == 1:    
-      if(iter < (total_tiles-1) && (_i_nif_load!=_i_nif_exec || _i_nof_load!=_i_nof_exec)) {                        
-        dory_dma_barrier(DMA_copy_k);
-        dory_dma_barrier(DMA_copy_lambda);
-      }
-    % endif      
       DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_exec, _i_w_exec, _i_nof_exec, ${y_tile_size_h}, ${y_tile_size_w}, ${y_tile_size_nof}, ${y_w}, ${int(nof*factor)}, 0, 0, 0, 0, 0, 0, ${y_data_size_byte});
       DMA_copy_y.loc = (l1_buffer + ${l1_y_offset}) + store_db_y;
       DMA_copy_y.number_of_2d_copies = y_tile_size_h;

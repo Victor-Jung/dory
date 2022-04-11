@@ -27,7 +27,7 @@ from mako.template import Template
 import numpy as np
 import torch
 import pandas as pd
-from ne16 import ne16_conv1x1_roll, ne16_conv1x1_unroll
+from ne16 import ne16_conv1x1_unroll, ne16_conv3x3_unroll
 
 class Model_deployment_MCU(Model_deployment):
     """
@@ -84,7 +84,7 @@ class Model_deployment_MCU(Model_deployment):
             layer_mixed_list.append('pulp_nn_avgpool_u2.c')
             layer_mixed_list.append('pulp_nn_maxpool_u2.c')
         if 'nnx' in optional:
-            layer_mixed_list.append('pulp_nnx_pointwise.c')
+            layer_mixed_list.append('pulp_nnx_hal.c')
         if 'mixed-hw' in optional:
             for i, nodes_to_deploy in enumerate(PULP_Nodes_Graph[:number_of_deployed_layers]):
                 BitIn = PULP_Nodes_Graph[i].input_activation_bits
@@ -210,17 +210,14 @@ class Model_deployment_MCU(Model_deployment):
             if 'weights' in nodes_to_deploy.__dict__:
                 if nnx:
                     s = nodes_to_deploy.weights.shape
-                    if len(s) < 4:
-                        pass
-                    elif s[1] == s[2] == 1:
+                    if len(s) == 4:
                         # [Ko, H, W, Ki] -> bytearray([Ko, Ki/KiTile, Qw, KiTile])
-                        nodes_to_deploy.wmin    = -128 #nodes_to_deploy.weights.min()
+                        nodes_to_deploy.wmin = -128 #nodes_to_deploy.weights.min()
                         w = np.asarray(nodes_to_deploy.weights - nodes_to_deploy.wmin, dtype=np.int64)
-                        nodes_to_deploy.weights = ne16_conv1x1_unroll(np.asarray(nodes_to_deploy.weights - nodes_to_deploy.wmin, dtype=np.int64), 8, format='KoHWKi')
-                        # consistency check
-                        ww = ne16_conv1x1_roll(nodes_to_deploy.weights, 8, w.shape, format='KoHWKi')
-                        if (ww-w).any():
-                            print("ERROR in LAYER %d: NE16 weight consistency check failed" % i)
+                        if s[1] == s[2] == 1:
+                            nodes_to_deploy.weights = ne16_conv1x1_unroll(w, 8, format='KoHWKi')
+                        elif s[1] == s[2] == 3:
+                            nodes_to_deploy.weights = ne16_conv3x3_unroll(w, 8, format='KoHWKi')
                 if PULP_Nodes_Graph[i].weight_bits < 8 and 'DW' in nodes_to_deploy.name:
                     nodes_to_deploy.weights = nodes_to_deploy.weights.reshape(int(nodes_to_deploy.weights.shape[0]/2),2,nodes_to_deploy.weights.shape[1],nodes_to_deploy.weights.shape[2],nodes_to_deploy.weights.shape[3]).transpose(0,2,3,1,4).flatten().tolist()
                 else:

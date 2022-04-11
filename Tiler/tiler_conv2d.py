@@ -38,7 +38,6 @@ import os
 import sys
 
 # accelerator-specific functions for NNX
-from ne16 import ne16_conv1x1_unroll
 from ne16 import ne16_conv1x1_pad_ki
 
 class Tiler_Conv2D():
@@ -222,7 +221,7 @@ class Tiler_Conv2D():
                 [n_out, h_out, w_out],
                 self.buffer_size,
                 full_computation=full_computation,
-                nnx=(fs1==1 and fs2==1 and DW==0),
+                nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
                 multiple_buffering_factor=multiple_buffering_factor,
                 name=name)
         else:
@@ -240,7 +239,7 @@ class Tiler_Conv2D():
                 [n_out, h_out, w_out],
                 self.buffer_size,
                 full_computation=full_computation,
-                nnx=(fs1==1 and fs2==1 and DW==0),
+                nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
                 multiple_buffering_factor=multiple_buffering_factor,
                 name=name)        
         name_include.append(name)
@@ -334,7 +333,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx = (fs1==1 and fs2==1 and DW==0))
+                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
             else:          
                 in_dim1, out_dim1, weight_dim1, l2_dim_k, l2_dim_lambda, bias_dim1, l1_dim1, n_out1, w_out1, h_out1 = print_template_layer(
                     X, Y, W,
@@ -361,7 +360,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx = (fs1==1 and fs2==1 and DW==0))
+                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
             if (p_top + p_bottom) > 0 and (factor_h_in > 1 or factor_h_out > 1):
                 tiling = self.get_tiling_conv2d_like(
                     DW,
@@ -378,7 +377,7 @@ class Tiler_Conv2D():
                     self.buffer_size,
                     full_computation=full_computation,
                     multiple_buffering_factor=multiple_buffering_factor,
-                    nnx=(fs1==1 and fs2==1 and DW==0),
+                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
                     name=name) 
                 tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out = tiling
                 in_dim1, out_dim2, weight_dim1, l2_dim_k, l2_dim_lambda, bias_dim1, l1_dim1, n_out1, w_out1, h_out1 = print_template_layer(
@@ -406,7 +405,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx = (fs1==1 and fs2==1 and DW==0))
+                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
                 if out_dim2 > out_dim1:
                     out_dim1 = out_dim2     
                 h_in_last = h_in
@@ -443,7 +442,7 @@ class Tiler_Conv2D():
                     self.buffer_size,
                     full_computation=full_computation,
                     multiple_buffering_factor=multiple_buffering_factor,
-                    nnx=(fs1==1 and fs2==1 and DW==0),
+                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
                     name=name)  
                 tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out = tiling
                 in_dim1, out_dim2, weight_dim1, l2_dim_k, l2_dim_lambda, bias_dim1, l1_dim1, n_out1, w_out1, h_out1 = print_template_layer(
@@ -471,7 +470,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx = (fs1==1 and fs2==1 and DW==0))
+                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
                 if out_dim2 > out_dim1:
                     out_dim1 = out_dim2   
                 name_include.append(name + '_p_t')
@@ -525,7 +524,7 @@ class Tiler_Conv2D():
             else:
                 n_in_temp = self.x_shape[0]
                 in_dim1 = n_in_temp * h_in_temp * w_in_temp
-                if (fs1==1 and fs2==1 and DW==0): # FIXME if nnx
+                if (((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0): # FIXME if nnx
                     n_in_temp = ne16_conv1x1_pad_ki(self.x_shape[0])
                 h_in_temp = self.x_shape[-2]
                 w_in_temp = self.x_shape[-1]
