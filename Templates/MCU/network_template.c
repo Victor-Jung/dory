@@ -304,17 +304,14 @@ static void check_layer(char *output, int check_sum_true, int dim) {
     printf("Checksum in/out Layer :\tFailed [%u vs. %u]\n", checksum, check_sum_true);
 }
 
-static void check_layer_last(int *output, int check_sum_true, int dim) {
-  int checksum = 0;
-  int *ptr = (int *) output;
-  for(int j=0; j<(int)(dim/4); j++) {
-    checksum += ptr[j];
-  }
+static void check_layer_last(char *vect, int checksum, int dim) {
+  int sum = 0;
+  for(int i = 0; i < dim; i++) sum += vect[i];
 
-  if(check_sum_true == checksum)
-    printf("Checksum final :\tOk\n");
+  if(sum == checksum)
+    printf("Checksum final: Ok\n");
   else 
-    printf("Checksum final :\tFailed [%d vs. %d]\n", checksum, check_sum_true);
+    printf("Checksum final: Failed [%d vs. %d]\n", sum, checksum);
 }
 
 // check for weight checksum
@@ -780,7 +777,7 @@ void network_run(unsigned int L3_weights_size)
       }
       else
       {
-        check_layer_last((int32_t *) L2_output, check_activations_out[i], check_activations_out_dimension[i]);
+        check_layer_last(L2_output, check_activations_out[i], check_activations_out_dimension[i]);
       }
       if (i==${check_layer})
       {    
@@ -791,7 +788,7 @@ void network_run(unsigned int L3_weights_size)
 % elif verbose_level == 'Last+Perf_final':
     if(pi_core_id()==0)
       if (i == ${nb_layers - 1})
-          check_layer_last((int32_t *) L2_output, check_activations_out[i], check_activations_out_dimension[i]);
+          check_layer_last(L2_output, check_activations_out[i], check_activations_out_dimension[i]);
 % else:
 #ifdef VERBOSE
     if(pi_core_id()==0)
