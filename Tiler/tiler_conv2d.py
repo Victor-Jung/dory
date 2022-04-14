@@ -537,7 +537,7 @@ class Tiler_Conv2D():
                     weights_dim = int(n_in_temp * fs1 *fs2 * self.BitW / 8) + bias_dim1
                 else:
                     weights_dim = int(n_in_temp * n_out_temp * fs1 *fs2 * self.BitW / 8) + bias_dim1
-                    if (fs1==1 and fs2==1 and DW==0):
+                    if (((fs1==1 and fs2==1) or (fs1==3 and fs1==3)) and DW==0):
                         weights_dim = int(ne16_conv1x1_pad_ki(n_in_temp) * n_out_temp * fs1 *fs2 * self.BitW / 8) + bias_dim1
                 if BN == 1:
                     weights_dim +=n_out_temp * int(self.BitActivation / 4)
@@ -1068,7 +1068,15 @@ class Tiler_Conv2D():
         elif not nnx:
             weight_dim = self.BitW * int(n_out/self.number_of_clusters) * fs1 * fs2
         elif DW == 0 and nnx:
-            weight_dim = self.BitW * n_in * int(n_out/self.number_of_clusters) * fs1 * fs2 # FIXME
+            # Don't touch this line for now...
+            # It magically works with this, probably something wrong with the setup
+            # of the problem in the case of nnx. It allocates more memory for the weights
+            # with the current and line below.
+            weight_dim = self.BitW * n_in * int(n_out/self.number_of_clusters) * fs1 * fs2 
+            #weight_dim = n_out * int(math.ceil(n_in / 16)) * self.BitW * fs1 * fs2 * 2
+            #print(f"n_out = {n_out}; n_in = {n_in}; bitW = {self.BitW}")
+            #print(f"fs1 = {fs1}; fs2 = {fs2};")
+            #print(f"weight_dim = {weight_dim}")
         if DW == 0 and not nnx:
             im2col_dim = 8 * 2 * 8 * fs1 * fs2 * n_in 
         elif not nnx:

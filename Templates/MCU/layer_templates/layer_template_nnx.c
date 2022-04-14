@@ -267,10 +267,10 @@ void ${func_name}(
 
 %if tile_dim_nof == 1:
   DMA_copy_W.number_of_1d_copies = 1;
-  DMA_copy_W.length_1d_copy = ${W_tile_size_nof * W_tile_nif_byte * fs1 * fs2};
+  DMA_copy_W.length_1d_copy = ${W_tile_size_nof * (W_tile_nif_byte//16) * W_data_size_byte * fs1 * fs2 * 2};
 %else:
   DMA_copy_W.number_of_1d_copies = ${W_tile_size_nof};
-  DMA_copy_W.length_1d_copy = ${W_tile_nif_byte * fs1 * fs2};
+  DMA_copy_W.length_1d_copy = ${(W_tile_nif_byte//16) * W_data_size_byte * fs1 * fs2 * 2};
 %endif
 
   dory_dma_memcpy_async(DMA_copy_W);
