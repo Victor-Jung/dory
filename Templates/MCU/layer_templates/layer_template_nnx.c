@@ -52,11 +52,11 @@ void ${func_name}(
   // DMA declaration //
   /////////////////////
   uint32_t dory_dma_channel = dory_dma_allocate();
-  volatile DMA_copy DMA_copy_k, DMA_copy_lambda;
-  volatile DMA_copy DMA_copy_W, DMA_copy_x, DMA_copy_y;
+  DMA_copy DMA_copy_k, DMA_copy_lambda;
+  DMA_copy DMA_copy_W, DMA_copy_x, DMA_copy_y;
 
 % if has_bias == 1:
-  volatile DMA_copy DMA_copy_bias;
+  DMA_copy DMA_copy_bias;
   DMA_copy_bias.hwc_to_chw = 0;
   DMA_copy_bias.stride_2d = 0;
   DMA_copy_bias.stride_1d = 0;
@@ -101,13 +101,14 @@ void ${func_name}(
 
   int p_r, p_l, p_t, p_b;
 
-% if tile_dim_nif*tile_dim_h*tile_dim_w != 1:
-  unsigned short x_tile_size_nif;
-  unsigned short x_tile_size_byte;
+% if tile_dim_nif * tile_dim_h * tile_dim_w != 1:
   unsigned short x_length_nif_byte;
   int pad_offset_h, pad_offset_w;
 % endif  
 
+  int y_tile_size_h;
+  int y_tile_size_w;
+  int y_length_nof_byte;
   unsigned short  x_tile_size_h;
   unsigned short  x_tile_size_w;
   unsigned short  W_tile_size_nof;
@@ -126,11 +127,6 @@ void ${func_name}(
   % endif
 % endif
 
-  int y_tile_size_nof;
-  int y_tile_size_h;
-  int y_tile_size_w;
-  int y_tile_size_byte;
-  int y_length_nof_byte;
   int db_x = 0;
   int db_W = 0;
   int db_act = 0;
@@ -158,7 +154,7 @@ void ${func_name}(
   uint16_t out_shift = out_shift_in;
 % endif
 
-  volatile nnx_task_t nnx_task, nnx_task_remainder;
+  nnx_task_t nnx_task, nnx_task_remainder;
   // init accelerated task
   nnx_soft_clear();
   nnx_task_init(&nnx_task);
@@ -169,51 +165,56 @@ void ${func_name}(
   const int l1_buffer_k = l1_buffer + ${l1_k_offset};
   const int l1_buffer_lambda = l1_buffer + ${l1_lambda_offset};
 
-  volatile nnx_weights_t nnx_weights = {
-    l1_buffer_w,
-    ${x_tile_size_h},
-    ${x_tile_size_w},
-    ${x_tile_size_nif},
-    ${y_tile_size_nof},
-    8,
-    -128,
-    weightOffsetModeLayerWise
+  nnx_weights_t nnx_weights = {
+    .data = l1_buffer_w,
+    .height = ${fs1},
+    .width = ${fs2},
+    .depth = ${x_tile_size_nif},
+    .n_weights = ${y_tile_size_nof},
+    .bitwidth = 8,
+    .offset_factor = -128,
+    .offset_mode = weightOffsetModeLayerWise
   };
-  volatile nnx_feature_t nnx_input = {
-    l1_buffer_x,
-    ${x_tile_size_h},
-    ${x_tile_size_w},
-    ${x_tile_size_nif},
-    featureBitwidth8Bit
+
+  nnx_feature_t nnx_input = {
+    .data = l1_buffer_x,
+    .height = ${x_tile_size_h},
+    .width = ${x_tile_size_w},
+    .depth = ${x_tile_size_nif},
+    .bitwidth = featureBitwidth8Bit
   };
-  volatile nnx_feature_t nnx_output = {
-    l1_buffer_y,
-    ${y_tile_size_h},
-    ${y_tile_size_w},
-    ${y_tile_size_nof},
-    featureBitwidth8Bit
+
+  nnx_feature_t nnx_output = {
+    .data = l1_buffer_y,
+    .height = ${y_tile_size_h},
+    .width = ${y_tile_size_w},
+    .depth = ${y_tile_size_nof},
+    .bitwidth = featureBitwidth8Bit
   };
 
   nnx_conv_${fs1}x${fs2}(&nnx_task, nnx_weights, nnx_input, nnx_output);
 
   // PULP-NN like defaults
-  nnx_norm_t norm;
-  norm.mode  = normMode32Bit;
-  norm.scale = l1_buffer_k;
-  norm.bias  = l1_buffer_lambda;
-  norm.shift = NE16_NULL;
+  nnx_norm_t norm = {
+    .mode  = normMode32Bit,
+    .scale = l1_buffer_k,
+    .bias  = l1_buffer_lambda,
+    .shift = NE16_NULL
+  };
 
-  nnx_quant_t quant;
-  quant.shift_amount = out_shift;
-  quant.mode = quantMode8Bit;
-  quant.function = quantFunctionRelu;
-  quant.use_rounding = 0;
+  nnx_quant_t quant = {
+    .shift_amount = out_shift,
+    .mode = quantMode8Bit,
+    .function = quantFunctionRelu,
+    .use_rounding = 0
+  };
 
   nnx_norm_quant(&nnx_task, norm, quant);
 
 #ifdef GVSOC_LOGGING
   nnx_activate_gvsoc_logging(1);
 #endif
+
   VERBOSE_PRINT("Acquire iter=PRE\n");
   int id = nnx_acquire();
   nnx_offload(&nnx_task);
@@ -256,6 +257,7 @@ void ${func_name}(
   DMA_copy_W.loc = l1_buffer_w;
   DMA_copy_W.number_of_2d_copies = 1;
 
+// TODO: I don't understand this part. Why does tile dimension change this? What is 1d_copies?
 %if tile_dim_nof == 1:
   DMA_copy_W.number_of_1d_copies = 1;
   DMA_copy_W.length_1d_copy = ${W_tile_size_nof * (W_tile_nif_byte//16) * W_data_size_byte * fs1 * fs2 * 2};
@@ -323,7 +325,7 @@ void ${func_name}(
     // compute double buffering offsets and update db state
 
   % if tile_dim_nif != 1:
-      exec_db_W = !db_state_W ? ${W_tile_size_byte} : 0;
+    exec_db_W = !db_state_W ? ${W_tile_size_byte} : 0;
   % elif tile_dim_nof != 1:
     if (_i_nof_load != _i_nof_exec)
       exec_db_W = !db_state_W ? ${W_tile_size_byte} : 0;
@@ -365,10 +367,6 @@ void ${func_name}(
       asm volatile("": : :"memory");
 
 % if tile_dim_nif * tile_dim_h * tile_dim_w != 1:
-      // These 2 below are unused
-      x_tile_size_nif = (_i_nif_load+1 == ${tile_dim_nif}) ? ${x_tile_size_nif_last} : ${x_tile_size_nif};
-      x_tile_size_byte = x_tile_size_nif*x_tile_size_h*x_tile_size_w*${x_data_size_byte}/8;
-
       x_length_nif_byte = (_i_nif_load+1 == ${tile_dim_nif})   ? ${x_tile_size_nif_byte_last} : ${x_tile_size_nif_byte};
       // additionally overlap by padding for the first tile after a border one
       //this because in the first tile we use less pixels from x_buffer, since we have the ones of padding
@@ -439,73 +437,46 @@ void ${func_name}(
     }
 
     // program NE in LOAD stage to take advantage of multi-context
-    int is_border_tile = _i_nif_load+1 == ${tile_dim_nif} || _i_h_load+1 == ${tile_dim_h} || _i_w_load+1 == ${tile_dim_w} || _i_nof_load+1 == ${tile_dim_nof};
-    if((iter < total_tiles-1) && is_border_tile) {
+    if(iter < total_tiles-1) {
+      int is_border_tile = _i_nif_load+1 == ${tile_dim_nif} || _i_h_load+1 == ${tile_dim_h} || _i_w_load+1 == ${tile_dim_w} || _i_nof_load+1 == ${tile_dim_nof};
+      if (is_border_tile) {
+        // reinit task data structure
+        nnx_task_init(&nnx_task_remainder);
 
-      // reinit task data structure
-      nnx_weights.data      = l1_buffer_w + exec_db_W;
-      nnx_weights.depth     = W_tile_size_nif;
-      nnx_weights.n_weights = W_tile_size_nof;
+        nnx_weights.data      = l1_buffer_w + exec_db_W;
+        nnx_weights.depth     = W_tile_size_nif;
+        nnx_weights.n_weights = W_tile_size_nof;
 
-      nnx_input.data      = l1_buffer_x + exec_db_x;
-      nnx_input.height    = x_tile_size_h;
-      nnx_input.width     = x_tile_size_w;
-      nnx_input.depth     = W_tile_size_nif;
+        nnx_input.data      = l1_buffer_x + exec_db_x;
+        nnx_input.height    = x_tile_size_h;
+        nnx_input.width     = x_tile_size_w;
+        nnx_input.depth     = W_tile_size_nif;
 
-      nnx_output.data     = l1_buffer_y + db_y;
-      nnx_output.height   = y_tile_size_h;
-      nnx_output.width    = y_tile_size_w;
-      nnx_output.depth    = W_tile_size_nof;
+        nnx_output.data     = l1_buffer_y + db_y;
+        nnx_output.height   = y_tile_size_h;
+        nnx_output.width    = y_tile_size_w;
+        nnx_output.depth    = W_tile_size_nof;
+        nnx_conv_${fs1}x${fs2}(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output);
 
-      VERBOSE_PRINT("  iter=%d\n", iter);
-      VERBOSE_PRINT("    W_tile_size_nif=%d, W_tile_size_nof=%d, x_tile_size_h=%d, x_tile_size_w=%d, y_tile_size_h=%d, y_tile_size_w=%d", W_tile_size_nif, W_tile_size_nof, x_tile_size_h, x_tile_size_w, y_tile_size_h, y_tile_size_w);
-      VERBOSE_PRINT("    Ko=%d Ki=%d Ho=%d Wo=%d Hi=%d Wi=%d\n", nnx_weights.n_weights, nnx_weights.depth, nnx_output.height, nnx_output.width, nnx_input.height, nnx_input.width);
-
-      nnx_task_init(&nnx_task_remainder);
-      nnx_conv_${fs1}x${fs2}(&nnx_task_remainder, nnx_weights, nnx_input, nnx_output);
-      // PULP-NN like defaults
-      norm.scale = l1_buffer_k + db_act;
-      norm.bias  = l1_buffer_lambda + db_act;
-      nnx_norm_quant(&nnx_task_remainder, norm, quant);
-#ifdef GVSOC_LOGGING
-      nnx_activate_gvsoc_logging(1);
-#endif
-
-      VERBOSE_PRINT("    nb_KoKi=%08x nb_HoWo=%08x\n", nnx_task_remainder.cfg.subtile.number.KoKi, nnx_task_remainder.cfg.subtile.number.HoWo);      
-
-      if(nnx_task_remainder.cfg.subtile.number.KoKi != 0 && nnx_task_remainder.cfg.subtile.number.HoWo != 0) {
-        VERBOSE_PRINT("Acquire iter=%d total=%d\n", iter, total_tiles);
-        int id = nnx_acquire();
-        VERBOSE_PRINT("  Job_id=%d\n", id);
-        nnx_offload(&nnx_task_remainder);
+        norm.scale = l1_buffer_k + db_act;
+        norm.bias  = l1_buffer_lambda + db_act;
+        nnx_norm_quant(&nnx_task_remainder, norm, quant);
       }
       else {
-        printf("ERROR CONDITION\n");
+        // do not reinit -- simply update the pointers
+        nnx_task.weights_ptr     = l1_buffer_w + exec_db_W;
+        nnx_task.infeat_ptr      = l1_buffer_x + db_x;
+        nnx_task.outfeat_ptr     = l1_buffer_y + db_y;
+        nnx_task.scale_ptr       = l1_buffer_k + db_act;
+        nnx_task.scale_bias_ptr  = l1_buffer_lambda + db_act;
       }
 
-    }
-    else if(iter < total_tiles-1) {
-
-      // do not reinit -- simply update the pointers
-      nnx_task.weights_ptr     = l1_buffer_w + exec_db_W;
-      nnx_task.infeat_ptr      = l1_buffer_x + db_x;
-      nnx_task.outfeat_ptr     = l1_buffer_y + db_y;
-      nnx_task.scale_ptr       = l1_buffer_k + db_act;
-      nnx_task.scale_shift_ptr = NULL;
-      nnx_task.scale_bias_ptr  = l1_buffer_lambda + db_act;
       VERBOSE_PRINT("Acquire iter=%d total=%d bool=%d\n", iter, total_tiles, iter<total_tiles-1);
-
       int id = nnx_acquire();
       VERBOSE_PRINT("  Job_id=%d\n", id);    
-      nnx_offload(&nnx_task);
+      nnx_offload(is_border_tile ? &nnx_task_remainder : &nnx_task);
     }
 
-    y_tile_size_nof = (_i_nof_exec+1 == ${tile_dim_nof}) ? ${y_tile_size_nof_last} : ${y_tile_size_nof};
-    y_tile_size_h   = (_i_h_exec+1 == ${tile_dim_h})   ? ${y_tile_size_h_last} : ${y_tile_size_h};
-    y_tile_size_w   = (_i_w_exec+1 == ${tile_dim_w})   ? ${y_tile_size_w_last} : ${y_tile_size_w};
-    y_tile_size_byte = y_tile_size_nof*y_tile_size_h*y_tile_size_w*${y_data_size_byte}/8;
-    y_length_nof_byte = (_i_nof_exec+1 == ${tile_dim_nof})   ? ${y_length_nof_byte_last} : ${y_tile_size_nof_byte};
-    
     // ######## ##     ## ########  ######  
     // ##        ##   ##  ##       ##    ## 
     // ##         ## ##   ##       ##       
@@ -549,6 +520,10 @@ void ${func_name}(
       if(iter == total_tiles-1)
         nnx_wait();
 
+      y_tile_size_h = (_i_h_exec + 1 == ${tile_dim_h}) ? ${y_tile_size_h_last} : ${y_tile_size_h};
+      y_tile_size_w = (_i_w_exec + 1 == ${tile_dim_w}) ? ${y_tile_size_w_last} : ${y_tile_size_w};
+      y_length_nof_byte = (_i_nof_exec + 1 == ${tile_dim_nof}) ? ${y_length_nof_byte_last} : ${y_tile_size_nof_byte};
+
       DMA_copy_y.ext = dory_get_tile_3d(l2_y, _i_h_exec, _i_w_exec, _i_nof_exec, ${y_tile_size_h}, ${y_tile_size_w}, ${y_tile_size_nof}, ${y_w}, ${int(nof*factor)}, 0, 0, 0, 0, 0, 0, ${y_data_size_byte});
       DMA_copy_y.loc = l1_buffer_y + store_db_y;
       DMA_copy_y.number_of_2d_copies = y_tile_size_h;
@@ -559,7 +534,7 @@ void ${func_name}(
     }
 % endif
     // update prev iterators
-    db_state_y = ! db_state_y; 
+    db_state_y = !db_state_y; 
     db_state_x = !db_state_x;
     if (_i_nif_load != _i_nif_exec || _i_nof_load != _i_nof_exec)
       db_state_W = !db_state_W;
