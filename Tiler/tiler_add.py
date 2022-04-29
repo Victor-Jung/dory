@@ -83,7 +83,8 @@ class Tiler_Add():
                        out_mul2=0,
                        out_shift=0,
                        name='Add',
-                       type='Avg'
+                       type='Avg',
+                       add_rq_params=None
                        ):
         # This function generate the layer function to be included in the project for the addition operation.
 

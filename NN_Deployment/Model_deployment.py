@@ -225,6 +225,14 @@ class Model_deployment():
                         out_shift=nodes_to_deploy.outshift,
                         name=name_layer,
                         type=name)
+                if hasattr(nodes_to_deploy, 'in1_mul'):
+                    # for quantized add nodes, we need all the requantization
+                    # parameters to be passed to the template
+                    rq_params = {}
+                    for prefix in ['in1', 'in2', 'out']:
+                        for k in ['mul', 'add', 'shift', 'rq']:
+                            rq_params[f'{prefix}_{k}'] = getattr(nodes_to_deploy, f'{prefix}_{k}')
+                    d['add_rq_params'] = rq_params
 
             in_dim2, out_dim2, weights_dim, l1_dim2, L3_tiling, factor_ch_out, factor_h_out, factor_h_in = tile_gen.get_tiling(**d)
 

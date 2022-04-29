@@ -51,17 +51,19 @@ class ONNX_management():
         # Allocation of a Node, Convolution, Pooling or Linear
         new_parameters = {}
         new_parameters['input_index'] = [input_i for input_i in node_iterating.input if 'weight' not in input_i][0]
-        if 'Add' == node_iterating.op_type:
+        if node_iterating.op_type == 'Add':
             new_parameters['input_index_add'] = [input_i for input_i in node_iterating.input if 'weight' not in input_i][1]
             new_parameters['branch_in'] = 1
         new_parameters['output_index'] = node_iterating.output[0] 
         new_parameters['pads'] = [0, 0, 0, 0]
         ## attributes
+
         for attribute in node_iterating.attribute:
-        	if bool(attribute.i):
-        		new_parameters[attribute.name] = attribute.i
-        	if bool(attribute.ints):
-        		new_parameters[attribute.name] = attribute.ints
+            if attribute.type == attribute.INT:
+                new_parameters[attribute.name] = attribute.i
+            elif attribute.type == attribute.INTS:
+                new_parameters[attribute.name] = attribute.ints
+
         if 'kernel_shape' in new_parameters.keys():
             if np.asarray(new_parameters['kernel_shape']).shape[0] == 1:
                 new_parameters['pads'] = [0, 0]
@@ -188,7 +190,10 @@ class ONNX_management():
             except:
                 new_parameters['MACs'] = new_parameters['kernel_shape'][0] * new_parameters['kernel_shape'][1] * new_parameters['ch_in'] * new_parameters['ch_out'] * new_parameters['output_dim']
         else:
-            new_parameters['MACs'] = new_parameters['ch_in'] * new_parameters['ch_out']* new_parameters['output_dim'][0] * new_parameters['output_dim'][1]
+            try:
+                new_parameters['MACs'] = new_parameters['ch_in'] * new_parameters['ch_out']* new_parameters['output_dim'][0] * new_parameters['output_dim'][1]
+            except TypeError:
+                import ipdb; ipdb.set_trace()
         new_node.add_dict_parameter(new_parameters)
         return new_node
 
@@ -302,6 +307,7 @@ class ONNX_management():
                     sys.exit("ERROR 01. Channels of a layer not multiple of 2 (int4 precision layers) or 4 (int2 precision layers). Exiting...")
 
     def update_branches_graph(self):
+        #import ipdb; ipdb.set_trace()
         # updating branch in/out connections
         for i, nodes in enumerate(self.PULP_Nodes_Graph):
             counter = 0
@@ -333,7 +339,7 @@ class ONNX_management():
                     input2_add = input1_add
                 for node_two in self.PULP_Nodes_Graph:
                     if node_two.output_index == input2_add:
-                        node_two.add_parameter('branch_last', 1)  
+                        node_two.add_parameter('branch_last', 1)
 
     def check_graph(self):
         # Logging function to report exported graph of PULP
@@ -362,6 +368,7 @@ class ONNX_management():
                 continue
             # Adding a new Conv, Pool or Linear layer
             if node_iterating.op_type in self.layers_to_node:
+
                 new_node = self.create_node(pulp.node_element(), first_node, node_iterating, self.model)
                 self.PULP_Nodes_Graph.append(new_node)
                 first_node = 0

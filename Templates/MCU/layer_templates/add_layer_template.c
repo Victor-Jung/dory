@@ -23,7 +23,9 @@ ${verbose_log}
 % if ULTRA_VERBOSE:
 #define VERBOSE_PRINT(...) printf(__VA_ARGS__)
 % endif
-
+<%
+rq_add = (add_rq_params is not None)
+%>
 
 
 
@@ -218,6 +220,7 @@ void ${func_name}(
     y_length_nof_byte = (last_nof_exec)   ? ${y_length_nof_byte_last} : ${y_tile_size_nof_byte};
     asm volatile("": : :"memory");
     dory_cores_barrier();
+    % if not rq_add:
     % if optional_type == '8bit':
     pulp_nn_add(
     % else:
@@ -233,6 +236,30 @@ void ${func_name}(
       x_tile_size_h_exec,
       x_tile_size_nif_exec
       );
+    % else:
+    % if optional_type == '8bit':
+    pulp_nn_add_rq(
+    % else:
+    pulp_nn_add_rq_u${x_data_size_byte}_u${y_data_size_byte}(
+      x,
+      x2,
+      y,
+      ${add_rq_params['in1_mul']},
+      ${add_rq_params['in1_add']},
+      ${add_rq_params['in1_shift']},
+      ${add_rq_params['in2_mul']},
+      ${add_rq_params['in2_add']},
+      ${shift_rq_params['in2_shift']},
+      ${add_rq_params['out_mul']},
+      ${add_rq_params['out_add']},
+      ${shift_rq_params['out_shift']},
+      x_tile_size_w_exec,
+      x_tile_size_h_exec,
+      x_tile_size_nif_exec,
+      ${add_rq_params['out_rq']}
+    )
+
+
     dory_cores_barrier();
     // wait for DMA write
     dory_dma_barrier(DMA_copy_y);

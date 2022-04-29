@@ -51,7 +51,8 @@ def print_template_layer(x, y_gold, W,
                          sdk = 'gap_sdk',
                          backend = 'MCU',
                          number_of_clusters = 1,
-                         dma_parallelization = '8-cores'
+                         dma_parallelization = '8-cores',
+                         add_rq_params = None
                          ):
     # Generate the Layer management c file.
     if type_data == 'float':
@@ -349,7 +350,10 @@ def print_template_layer(x, y_gold, W,
     tk['out_add'] = out_add
     tk['out_mul'] = out_mul
     tk['out_shift'] = out_shift
+    # only used for (2D) add layers
+    tk['add_rq_params'] = add_rq_params
     root = '/'.join(os.getcwd().split('/')[:-1])
+
 
     if conv_order == 'PULP-NN':
         tmpl = Template(filename=root+f"/Templates/{backend}/layer_templates/layer_template.c")

@@ -38,9 +38,9 @@ class Quantlab_onnx(ONNX_management):
     # Used to manage the ONNX files. By now, supported Convolutions (PW and DW), Pooling, Fully Connected and Relu.
 
     def __init__(self, onnx, platform):
-        layers_accepted = ['Conv', 'Pad', 'Mul', 'Add', 'Div', 'Constant', 'AveragePool', 'GlobalAveragePool', 'MaxPool', 'Cast', 'Clip', 'Floor', 'Flatten', 'Gemm', 'MatMul', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax']
+        layers_accepted = ['Conv', 'Pad', 'Mul', 'Add', 'Div', 'Constant', 'AveragePool', 'GlobalAveragePool', 'MaxPool', 'Cast', 'Clip', 'Floor', 'Flatten', 'Gemm', 'MatMul', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax', 'QuantAdd']
         layers_neglected = ['Cast', 'Floor', 'Flatten', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax']
-        layers_to_node = ['AveragePool', 'MaxPool', 'Conv', 'Gemm', 'MatMul', 'GlobalAveragePool', 'Add']
+        layers_to_node = ['AveragePool', 'MaxPool', 'Conv', 'Gemm', 'MatMul', 'GlobalAveragePool', 'Add', 'QuantAdd']
         backend = ['ConvBNRelu', 'ConvRelu', 'ConvDWBNRelu', 'ConvDWRelu', 'AveragePool', 'GlobalAveragePool', 'MaxPool', 'LinearBNRelu', 'GemmRelu', 'Gemm', 'MatMulRelu', 'MatMul', 'Add', 'AddBNRelu', 'BNReluAddBNRelu',
                     'PadConvBNRelu', 'PadConvRelu', 'PadConvDWBNRelu', 'PadConvDWRelu', 'PadAveragePool', 'PadGlobalAveragePool', 'PadMaxPool', 'PadLinearBNRelu', 'PadGemmRelu', 'PadGemm', 'PadMatMulRelu', 'PadMatMul', 
                     'PadAdd', 'PadAddBNRelu', 'PadBNReluAddBNRelu',
