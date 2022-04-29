@@ -62,7 +62,7 @@ class ONNX_management():
             if attribute.type == attribute.INT:
                 new_parameters[attribute.name] = attribute.i
             elif attribute.type == attribute.INTS:
-                new_parameters[attribute.name] = attribute.ints
+                new_parameters[attribute.name] = list(attribute.ints)
 
         if 'kernel_shape' in new_parameters.keys():
             if np.asarray(new_parameters['kernel_shape']).shape[0] == 1:

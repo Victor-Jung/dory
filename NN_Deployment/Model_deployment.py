@@ -139,7 +139,7 @@ class Model_deployment():
                               dma_parallelization = dma_parallelization,
                               number_of_clusters = number_of_clusters)
             str_l = 'ch_in' + str(nodes_to_deploy.ch_in) + 'ch_out' + str(nodes_to_deploy.ch_out) + 'groups' + str(
-                nodes_to_deploy.group) + 'dim_image' + str(nodes_to_deploy.input_dim[1],) + 'stride' + str(nodes_to_deploy.strides) + 'kernel'+ str(
+                nodes_to_deploy.group) + 'dim_image' + str(nodes_to_deploy.input_dim[1],) + 'pads' + ''.join([str(x) for x in nodes_to_deploy.pads]) +'stride' + str(nodes_to_deploy.strides) + 'kernel'+ str(
                 nodes_to_deploy.kernel_shape[0]) + str(nodes_to_deploy.kernel_shape[1]) + 'BitIn' + str(BitIn) + 'BitOut' + str(BitOut) + 'BitW' + str(BitW)
             if '1D' in layer:
                 str_l += 'Dilation' + str(nodes_to_deploy.dilations)
@@ -326,7 +326,7 @@ class Model_deployment():
             X_in = pd.read_csv(os.path.join(load_dir, f'out_layer{f}.txt'))
             X_in = X_in.values[:, 0].astype(int)
             if f == len(PULP_Nodes_Graph[:number_of_deployed_layers]) - 1:
-                class_out = np.where(X_in == np.max(X_in))[0][0]
+                class_out = int(np.where(X_in == np.max(X_in))[0][0])
             for i, _ in enumerate(X_in):
                 X_in[i] = np.uint8(X_in[i])
             BitIn = nodes_to_deploy.input_activation_bits
@@ -359,7 +359,7 @@ class Model_deployment():
             if f != len(PULP_Nodes_Graph[:number_of_deployed_layers]) - 1:
                 PULP_Nodes_Graph[f + 1].check_sum_in = sum(Input_compressed)
             if 'Gemm' in nodes_to_deploy.name or 'Conv' in nodes_to_deploy.name or 'MatMul' in nodes_to_deploy.name:
-                PULP_Nodes_Graph[f].check_sum_w = sum(weights_to_write[f_w])
+                PULP_Nodes_Graph[f].check_sum_w = int(sum(weights_to_write[f_w]))
                 f_w += 1
             else:
                 PULP_Nodes_Graph[f].check_sum_w = 0
