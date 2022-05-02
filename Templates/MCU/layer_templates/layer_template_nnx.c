@@ -65,6 +65,8 @@ void ${func_name}(
   const unsigned int l2_x = real_arg[3];
   const unsigned int l2_y = real_arg[5];
   const unsigned int l2_W = real_arg[6];
+  const unsigned int l2_scale = l2_W + ${l2_off_k};
+  const unsigned int l2_bias = l2_W + ${l2_off_lambda};
   const unsigned int l1_buffer = real_arg[7];
   const unsigned int out_shift = real_arg[12];
 
@@ -151,8 +153,6 @@ void ${func_name}(
   int W_tile_size_nof = ${W_tile_size_nof};
   int W_tile_size_nif = ${W_tile_size_nif};
   int W_length_nif_byte = ${W_tile_nif_byte};
-
-  int pad_offset_h = 0, pad_offset_w = 0;
 
   // Tile loop indices
   int i_nof = 0, i_nif = 0, i_h = 0, i_w = 0;
@@ -318,14 +318,11 @@ void ${func_name}(
       x_length_nif_byte = (i_nif + 1 == ${tile_dim_nif}) ? ${x_tile_size_nif_byte_last} : ${x_tile_size_nif_byte};
 
       // additionally overlap by padding for the first tile after a border one
-      //this because in the first tile we use less pixels from x_buffer, since we have the ones of padding
-      pad_offset_h = 0, pad_offset_w = 0;
-      if(i_h > 0)
-        pad_offset_h = ${padding_top};
-      if(i_w > 0)
-        pad_offset_w = ${padding_left};
+      // this because in the first tile we use less pixels from x_buffer, since we have the ones of padding
+      const int pad_offset_h = i_h > 0 ? ${padding_top} : 0;
+      const int pad_offset_w = i_w > 0 ? ${padding_left} : 0;
 
-      DMA_copy_x.ext = dory_get_tile_3d(l2_x, i_h, i_w, i_nif, ${x_tile_size_h}, ${x_tile_size_w}, ${x_tile_size_nif}, ${x_w}, ${nif*g},  ${conv_overlap1}, ${conv_overlap2},0, pad_offset_h, pad_offset_w, 0, ${x_data_size_byte});
+      DMA_copy_x.ext = dory_get_tile_3d(l2_x, i_h, i_w, i_nif, ${x_tile_size_h}, ${x_tile_size_w}, ${x_tile_size_nif}, ${x_w}, ${nif*g}, ${conv_overlap1}, ${conv_overlap2}, 0, pad_offset_h, pad_offset_w, 0, ${x_data_size_byte});
       DMA_copy_x.loc = x_tile_ptr;
       DMA_copy_x.number_of_2d_copies = x_tile_size_h;
       DMA_copy_x.number_of_1d_copies = x_tile_size_w;
@@ -352,12 +349,12 @@ void ${func_name}(
 % endif
 
 % if FLAG_BATCHNORM == 1:
-      DMA_copy_k.ext = (uint32_t) l2_W+${l2_off_k} + ${k_tile_size_byte_transfer}*i_nof;
-      DMA_copy_k.loc = (uint32_t) scale_tile_ptr;
+      DMA_copy_k.ext = l2_scale + ${k_tile_size_byte_transfer} * i_nof;
+      DMA_copy_k.loc = scale_tile_ptr;
       DMA_copy_k.length_1d_copy = (uint16_t) W_tile_size_nof * ${int(act_dim_bit/8)};
 
-      DMA_copy_lambda.ext = (uint32_t) l2_W+${l2_off_lambda} + ${lambda_tile_size_byte_transfer}*i_nof;
-      DMA_copy_lambda.loc = (uint32_t) bias_tile_ptr;
+      DMA_copy_lambda.ext = l2_bias + ${lambda_tile_size_byte_transfer} * i_nof;
+      DMA_copy_lambda.loc = bias_tile_ptr;
       DMA_copy_lambda.length_1d_copy = (uint16_t) W_tile_size_nof * ${int(act_dim_bit/8)};
 % endif
     }
@@ -440,9 +437,14 @@ void ${func_name}(
 // | $$$$$$$$| $$  \ $$| $$$$$$$$|  $$$$$$/
 // |________/|__/  |__/|________/ \______/ 
 
-    // Either nothing has been offloaded yet or the accelerator is too fast
-    if (nnx_empty()) {
+    dma_copy_y_job_ids[DMA_Y_INDEX(i_tile)] = nnx_acquire();
+    nnx_offload(nnx_task_to_offload);
+
+    // Wait for data to arrive
+    if (is_load_x) {
       dory_dma_barrier(DMA_copy_x);
+    }
+    if (is_load_w) {
       dory_dma_barrier(DMA_copy_W);
 % if FLAG_BATCHNORM == 1:
       dory_dma_barrier(DMA_copy_k);
@@ -450,8 +452,6 @@ void ${func_name}(
 % endif
     }
 
-    dma_copy_y_job_ids[DMA_Y_INDEX(i_tile)] = nnx_acquire();
-    nnx_offload(nnx_task_to_offload);
     nnx_run_async();
 
 
