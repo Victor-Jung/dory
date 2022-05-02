@@ -376,19 +376,20 @@ void ${func_name}(
     // NE16 configuration //
     ////////////////////////
 
-    int is_border_tile = 0;
+    int is_border_tile = 0
   % if tile_dim_nif != 1:
-    is_border_tile |= i_nif + 1 == ${tile_dim_nif};
+      || i_nif + 1 == ${tile_dim_nif}
   % endif
   % if tile_dim_h != 1:
-    is_border_tile |= i_h + 1 == ${tile_dim_h};
+      || i_h + 1 == ${tile_dim_h}
   % endif
   % if tile_dim_w != 1:
-    is_border_tile |= i_w + 1 == ${tile_dim_w};
+      || i_w + 1 == ${tile_dim_w}
   % endif
   % if tile_dim_nof != 1:
-    is_border_tile |= i_nof + 1 == ${tile_dim_nof};
+      || i_nof + 1 == ${tile_dim_nof}
   % endif
+    ;
 
     nnx_task_to_offload = is_border_tile ? &nnx_tasks[NNX_TASK_REMAINDER] : &nnx_tasks[NNX_TASK_BODY];
 
@@ -485,10 +486,18 @@ void ${func_name}(
     // Update tile indices //
     /////////////////////////
 
+% if tile_dim_nif != 1:
     const int i_nif_prev = i_nif;
+% endif
+% if tile_dim_w != 1:
     const int i_w_prev = i_w;
+% endif
+% if tile_dim_h != 1:
     const int i_h_prev = i_h;
+% endif
+% if tile_dim_nof != 1:
     const int i_nof_prev = i_nof;
+% endif
 
 % if tile_dim_nif != 1 and flag_DW == 0:
     // loop nest is nof,h,w,nif
@@ -496,18 +505,28 @@ void ${func_name}(
     if(i_nif==${tile_dim_nif}) {
       i_nif = 0;
 % endif
+% if tile_dim_w != 1:
       i_w += 1;
       if(i_w==${tile_dim_w}) {
         i_w = 0;
+% endif
+% if tile_dim_h != 1:
         i_h += 1;
         if(i_h==${tile_dim_h}) {
           i_h = 0;
+% endif
 % if flag_DW == 1:
           i_nif += 1;
 % endif
+% if tile_dim_nof != 1:
           i_nof += 1;
+% endif
+% if tile_dim_h != 1:
         }
+% endif
+% if tile_dim_w != 1:
       }
+% endif
 % if tile_dim_nif != 1 and flag_DW == 0:
     }
 % endif
@@ -516,8 +535,27 @@ void ${func_name}(
     // Update load flags //
     ///////////////////////
 
-    is_load_w = i_nif_prev != i_nif || i_nof_prev != i_nof;
-    is_load_x = i_nif_prev != i_nif || i_w_prev != i_w || i_h_prev != i_h;
+    is_load_w = 0
+  % if tile_dim_nif != 1:
+      || i_nif_prev != i_nif
+  % endif
+  % if tile_dim_nof != 1:
+      || i_nof_prev != i_nof
+  % endif
+    ;
+
+    is_load_x = 0
+  % if tile_dim_nif != 1:
+      || i_nif_prev != i_nif
+  % endif
+  % if tile_dim_h != 1:
+      || i_h_prev != i_h
+  % endif
+  % if tile_dim_w != 1:
+      || i_w_prev != i_w
+  % endif
+    ;
+
 
     ///////////////////////////////////
     // Update double buffer pointers //
