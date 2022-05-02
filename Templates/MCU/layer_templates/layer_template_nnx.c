@@ -160,8 +160,8 @@ void ${func_name}(
   // Double buffer pointer indices
   int i_db_x = 0, i_db_y = 0, i_db_w = 0;
 
-  // Tile counters
-  int n_tiles_processed = 0;
+  // Store iterator
+  int i_store_y = 0;
 
   // Load flags (first tile must be loaded)
   int is_load_w = 1, is_load_x = 1;
@@ -428,6 +428,25 @@ void ${func_name}(
     }
 
 
+//   /$$$$$$  /$$$$$$$$ /$$$$$$  /$$$$$$$  /$$$$$$$$
+//  /$$__  $$|__  $$__//$$__  $$| $$__  $$| $$_____/
+// | $$  \__/   | $$  | $$  \ $$| $$  \ $$| $$      
+// |  $$$$$$    | $$  | $$  | $$| $$$$$$$/| $$$$$   
+//  \____  $$   | $$  | $$  | $$| $$__  $$| $$__/   
+//  /$$  \ $$   | $$  | $$  | $$| $$  \ $$| $$      
+// |  $$$$$$/   | $$  |  $$$$$$/| $$  | $$| $$$$$$$$
+//  \______/    |__/   \______/ |__/  |__/|________/
+
+    // If the accelerator is running a job with an id greater then
+    // the id of the tile we have to store, it means it has processed
+    // the tile and its output can be stored to l2 memory.
+    const int is_store = nnx_job_id() > dma_copy_y_job_ids[DMA_Y_INDEX(i_store_y)];
+
+    if (is_store) {
+      dory_dma_memcpy_async(DMA_copy_y[DMA_Y_INDEX(i_store_y)]);
+    }
+
+
 //  /$$$$$$$$ /$$   /$$ /$$$$$$$$  /$$$$$$ 
 // | $$_____/| $$  / $$| $$_____/ /$$__  $$
 // | $$      |  $$/ $$/| $$      | $$  \__/
@@ -451,26 +470,13 @@ void ${func_name}(
       dory_dma_barrier(DMA_copy_lambda);
 % endif
     }
+    // This checks if we are about to start a job that is writting
+    // to the buffer that we are storing at the moment.
+    if (i_tile == i_store_y + 2) {
+      dory_dma_barrier(DMA_copy_y[DMA_Y_INDEX(i_store_y)]);
+    }
 
     nnx_run_async();
-
-
-//   /$$$$$$  /$$$$$$$$ /$$$$$$  /$$$$$$$  /$$$$$$$$
-//  /$$__  $$|__  $$__//$$__  $$| $$__  $$| $$_____/
-// | $$  \__/   | $$  | $$  \ $$| $$  \ $$| $$      
-// |  $$$$$$    | $$  | $$  | $$| $$$$$$$/| $$$$$   
-//  \____  $$   | $$  | $$  | $$| $$__  $$| $$__/   
-//  /$$  \ $$   | $$  | $$  | $$| $$  \ $$| $$      
-// |  $$$$$$/   | $$  |  $$$$$$/| $$  | $$| $$$$$$$$
-//  \______/    |__/   \______/ |__/  |__/|________/
-
-    // If the accelerator is running a job with an id greater then
-    // the id of the tile we have to store, it means it has processed
-    // the tile and its output can be copied back.
-    if (nnx_job_id() > dma_copy_y_job_ids[DMA_Y_INDEX(n_tiles_processed)]) {
-      dory_dma_memcpy_async(DMA_copy_y[DMA_Y_INDEX(n_tiles_processed)]);
-      n_tiles_processed += 1;
-    }
 
 
 //  /$$   /$$ /$$$$$$$  /$$$$$$$   /$$$$$$  /$$$$$$$$ /$$$$$$$$       /$$$$$$ /$$   /$$ /$$$$$$$  /$$$$$$  /$$$$$$  /$$$$$$$$  /$$$$$$ 
@@ -556,6 +562,12 @@ void ${func_name}(
   % endif
     ;
 
+    ///////////////////////////
+    // Update store iterator //
+    ///////////////////////////
+    if (is_store) {
+      i_store_y += 1;
+    }
 
     ///////////////////////////////////
     // Update double buffer pointers //
@@ -576,14 +588,14 @@ void ${func_name}(
 // |  $$$$$$/   | $$  |  $$$$$$/| $$  | $$| $$$$$$$$      | $$  | $$| $$$$$$$$| $$ \/  | $$
 //  \______/    |__/   \______/ |__/  |__/|________/      |__/  |__/|________/|__/     |__/
 
-  for (int i = n_tiles_processed; i < total_tiles; i++) {
-    if (i < total_tiles - 1) {
-      nnx_wait_on_id(dma_copy_y_job_ids[DMA_Y_INDEX(i)]);
+  for (; i_store_y < total_tiles; i_store_y++) {
+    if (i_store_y < total_tiles - 1) {
+      nnx_wait_on_id(dma_copy_y_job_ids[DMA_Y_INDEX(i_store_y)]);
     } else {
       nnx_wait_empty();
     }
 
-    dory_dma_memcpy_async(DMA_copy_y[DMA_Y_INDEX(i)]);
+    dory_dma_memcpy_async(DMA_copy_y[DMA_Y_INDEX(i_store_y)]);
   }
 
 % if not TEST:
