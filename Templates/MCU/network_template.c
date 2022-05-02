@@ -742,12 +742,12 @@ void network_run(unsigned int L3_weights_size)
 % endif
 % if 'Yes' in performance:
     int MACs = NODEs_MACS[i];
-    float perf_MAC =  (float)MACs/perf_cyc;
+    int perf_MAC = MACs / perf_cyc;
     if (pi_core_id() == 0)
     {
       printf("[%d] Layer %-3d: num_cycles: %-11d,",pi_core_id(), i, perf_cyc); 
       printf(" MACs: %-11d,",MACs ); 
-      printf(" MAC/cycle: %-8f,",perf_MAC ); 
+      printf(" MAC/cycle: %-8d,", perf_MAC ); 
       printf(" n. of Cores: %d\n",NUM_CORES); 
     }
 % endif
