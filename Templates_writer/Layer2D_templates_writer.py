@@ -195,8 +195,8 @@ def print_template_layer(x, y_gold, W,
         tk['W_tile_nif_byte'] = int(math.ceil(tk['W_tile_size_nif'] * ds_W / 8.0))
         tk['W_tile_nif_byte_last'] = int(math.ceil(tk['W_tile_size_nif_last'] * ds_W / 8.0))
     else:
-        tk['W_tile_nif_byte'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif']) * ds_W / 8.0))
-        tk['W_tile_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W / 8.0))
+        tk['W_tile_nif_byte'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif']) * ds_W * fs1 * fs2 / 8.0))
+        tk['W_tile_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W * fs1 * fs2 / 8.0))
     # l2 parameters
     if tk['FLAG_BATCHNORM'] == 1:
         if not nnx:
@@ -337,7 +337,7 @@ def print_template_layer(x, y_gold, W,
         tk['W_tile_size_nif_last'] = tk['W_tile_size_nif']
         tk['W_tile_size_nif_byte_last'] = int(math.ceil(tk['W_tile_size_nif_last'] * ds_W / 8.0))
         if nnx:
-            tk['W_tile_size_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W / 8.0))
+            tk['W_tile_size_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W * fs1 * fs2 / 8.0))
     # y last
     tk['y_tile_size_nof_last'] = n_out % tile_n_out if (n_out % tile_n_out) > 0 else tile_n_out
     tk['y_tile_size_h_last'] = h_out % tile_h_out if (h_out % tile_h_out) > 0 else tile_h_out
