@@ -20,10 +20,23 @@
 
 #include "${func_name}.h"
 #include "pulp_nnx.h"
+
 #ifdef GVSOC_LOGGING
 #define GVSOC_LOG_LEVEL 1
 #include "pulp_nnx_util.h"
 #endif GVSOC_LOGGING
+
+#ifdef DEBUG_DMA_COPY
+#define dory_dma_memcpy_async(dma)                                                                                             \
+  do                                                                                                                           \
+  {                                                                                                                            \
+    printf(                                                                                                                    \
+        "\n[" #dma "] ext:%p, loc:%p, n_2d:%d, s_2d:%d, n_1d:%d, s_1d:%d, l_1d:%d\n",                                          \
+        dma.ext, dma.loc, dma.number_of_2d_copies, dma.stride_2d, dma.number_of_1d_copies, dma.stride_1d, dma.length_1d_copy); \
+    dory_dma_memcpy_async(dma);                                                                                                \
+  } while (0)
+#endif
+
 % if ULTRA_VERBOSE:
 // #define VERBOSE_PRINT(...) printf(__VA_ARGS__)
 #define VERBOSE_PRINT(...)
