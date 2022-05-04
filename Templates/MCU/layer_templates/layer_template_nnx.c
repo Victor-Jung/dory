@@ -97,9 +97,9 @@ void ${func_name}(
   DMA_copy_x.dma_channel = dory_dma_channel;
   
   DMA_copy_W.hwc_to_chw = 0;
-  DMA_copy_W.stride_2d = ${W_stride_nof_byte};
   DMA_copy_W.number_of_2d_copies = 1;
-  DMA_copy_W.stride_1d = ${W_stride_hw_byte};
+  DMA_copy_W.stride_2d = 0;
+  DMA_copy_W.stride_1d = ${W_stride_nof_byte};
   DMA_copy_W.dir = 1;
   DMA_copy_W.dma_channel = dory_dma_channel;
 
