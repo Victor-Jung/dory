@@ -421,8 +421,12 @@ void ${func_name}(
 // | $$$$$$$$|  $$$$$$/| $$  | $$| $$$$$$$/
 // |________/ \______/ |__/  |__/|_______/ 
                                         
-    // Wait for the accelerator to finish at least one task
-    nnx_wait_not_full();
+    // Acquire implicitly acts as a barrier that waits for the
+    // accelerator to not be full i.e. have less than NNX_CONTEXT_SIZE
+    // jobs commited.
+    // This barrier is required before dma_memcpy so that we don't
+    // overwrite the data being used by the accelerator.
+    dma_copy_y_job_ids[DMA_Y_INDEX(i_tile)] = nnx_acquire();
 
     if (is_load_x) {
       dory_dma_memcpy_async(DMA_copy_x);
@@ -464,7 +468,6 @@ void ${func_name}(
 // | $$$$$$$$| $$  \ $$| $$$$$$$$|  $$$$$$/
 // |________/|__/  |__/|________/ \______/ 
 
-    dma_copy_y_job_ids[DMA_Y_INDEX(i_tile)] = nnx_acquire();
     nnx_offload(nnx_task_to_offload);
 
     // Wait for data to arrive
