@@ -112,7 +112,8 @@ void ${func_name}(
   DMA_copy_W.hwc_to_chw = 0;
   DMA_copy_W.number_of_2d_copies = 1;
   DMA_copy_W.stride_2d = 0;
-  DMA_copy_W.stride_1d = ${W_stride_nof_byte};
+  DMA_copy_W.number_of_1d_copies = 1;
+  DMA_copy_W.stride_1d = 0;
   DMA_copy_W.dir = 1;
   DMA_copy_W.dma_channel = dory_dma_channel;
 
@@ -353,13 +354,7 @@ void ${func_name}(
       DMA_copy_W.ext = dory_get_tile_3d(l2_W, i_nof, 0, 0, ${W_tile_size_nof*8/W_data_size_byte}, ${fs1}*${fs2}, ${W_tile_size_nif}, ${fs1}*${fs2}, ${nif}, 0,0,0,0,0,0, ${W_data_size_byte});
 % endif
       DMA_copy_W.loc = w_tile_ptr;
-% if tile_dim_nof == 1:
-      DMA_copy_W.number_of_1d_copies = 1;
       DMA_copy_W.length_1d_copy = W_tile_size_nof * W_length_nif_byte;
-% else:
-      DMA_copy_W.number_of_1d_copies = W_tile_size_nof;
-      DMA_copy_W.length_1d_copy = W_length_nif_byte;
-% endif
 
 % if FLAG_BATCHNORM == 1:
       DMA_copy_k.ext = l2_scale + ${k_tile_size_byte_transfer} * i_nof;
