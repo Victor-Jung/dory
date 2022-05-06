@@ -62,11 +62,14 @@ def subtile_bit_extract(subtile, bit_idx):
             retval |= 1 << i
     return retval
 
-def ne16_conv3x3_unroll(w, qw, format="KoKiHW", TP_IN=16):
+def ne16_conv3x3_unroll(w, qw, format="KoKiHW", TP_IN=16, dw=False):
     if format == "KoKiHW":
         pass
     elif format == "KoHWKi":
-        w = w.transpose(0, 3, 1, 2)
+        if dw:
+            w = w.transpose(3, 0, 1, 2)
+        else:
+            w = w.transpose(0, 3, 1, 2)
     else:
         raise Exception(f'Format {format} not implemented.')
 

@@ -2,6 +2,7 @@
  * layer_template_nnx.c
  * Francesco Conti <f.conti@unibo.it>
  * Alessio Burrello <alessio.burrello@unibo.it>
+ * Luka Macan <luka.macan@unibo.it>
  *
  * Copyright (C) 2018-2022 University of Bologna
  * 
@@ -78,8 +79,10 @@ void ${func_name}(
   const unsigned int l2_x = real_arg[3];
   const unsigned int l2_y = real_arg[5];
   const unsigned int l2_W = real_arg[6];
-  const unsigned int l2_scale = l2_W + ${l2_off_k};
-  const unsigned int l2_bias = l2_W + ${l2_off_lambda};
+% if FLAG_BATCHNORM == 1:
+  const unsigned int l2_scale = l2_W + ${k_l2_weights_offset};
+  const unsigned int l2_bias = l2_W + ${lambda_l2_weights_offset};
+% endif
   const unsigned int l1_buffer = real_arg[7];
   const unsigned int out_shift = real_arg[12];
 
@@ -99,13 +102,9 @@ void ${func_name}(
   // DMA defaults //
   //////////////////
 
-% if flag_DW == 1:
-  DMA_copy_x.hwc_to_chw = 1;
-% else:
   DMA_copy_x.hwc_to_chw = 0;
-% endif  
-  DMA_copy_x.stride_2d = ${x_stride_w_byte};
-  DMA_copy_x.stride_1d = ${x_stride_c_byte};
+  DMA_copy_x.stride_2d = ${x_dma_stride_2d};
+  DMA_copy_x.stride_1d = ${x_dma_stride_1d};
   DMA_copy_x.dir = 1;
   DMA_copy_x.dma_channel = dory_dma_channel;
   
@@ -137,8 +136,8 @@ void ${func_name}(
   
   for (int i = 0; i < DMA_Y_CONTEXT_SIZE; i++) {
     DMA_copy_y[i].hwc_to_chw = 0;
-    DMA_copy_y[i].stride_2d = ${y_stride_w_byte};
-    DMA_copy_y[i].stride_1d = ${y_stride_c_byte};
+    DMA_copy_y[i].stride_2d = ${y_dma_stride_2d};
+    DMA_copy_y[i].stride_1d = ${y_dma_stride_1d};
     DMA_copy_y[i].dir = 0;
     DMA_copy_y[i].dma_channel = dory_dma_channel;
   }
@@ -166,7 +165,7 @@ void ${func_name}(
 
   int W_tile_size_nof = ${W_tile_size_nof};
   int W_tile_size_nif = ${W_tile_size_nif};
-  int W_length_nif_byte = ${W_tile_nif_byte};
+  int W_tile_ko_len = ${W_tile_ko_len};
 
   // Tile loop indices
   int i_nof = 0, i_nif = 0, i_h = 0, i_w = 0;
@@ -187,29 +186,37 @@ void ${func_name}(
   const int l1_buffer_x = l1_buffer + ${l1_x_offset};
   const int l1_buffer_y = l1_buffer + ${l1_y_offset};
   const int l1_buffer_w = l1_buffer + ${l1_W_offset};
+% if FLAG_BATCHNORM:
   const int l1_buffer_scale = l1_buffer + ${l1_k_offset};
   const int l1_buffer_bias = l1_buffer + ${l1_lambda_offset};
+% endif
 
   const struct {
+% if FLAG_BATCHNORM == 1:
+    int scale;
+    int bias;
+% endif
     int x;
     int y;
     int w;
-    int scale;
-    int bias;
   } db[2] = {
     {
+% if FLAG_BATCHNORM == 1:
+      .scale = l1_buffer_scale,
+      .bias = l1_buffer_bias,
+% endif
       .x = l1_buffer_x,
       .y = l1_buffer_y,
-      .w = l1_buffer_w,
-      .scale = l1_buffer_scale,
-      .bias = l1_buffer_bias
+      .w = l1_buffer_w
     },
     {
-      .x = l1_buffer_x + ${x_tile_size_byte},
-      .y = l1_buffer_y + ${y_tile_size_byte},
-      .w = l1_buffer_w + ${W_tile_size_byte},
-      .scale = l1_buffer_scale + ${k_tile_size_byte_transfer},
-      .bias = l1_buffer_bias + ${k_tile_size_byte_transfer}
+% if FLAG_BATCHNORM == 1:
+      .scale = l1_buffer_scale + ${l1_k_tile_size},
+      .bias = l1_buffer_bias + ${l1_lambda_tile_size},
+% endif
+      .x = l1_buffer_x + ${l1_x_tile_size},
+      .y = l1_buffer_y + ${l1_y_tile_size},
+      .w = l1_buffer_w + ${l1_W_tile_size}
     }
   };
 
@@ -237,8 +244,8 @@ void ${func_name}(
     .data = db[i_db_w].w,
     .height = ${fs1},
     .width = ${fs2},
-    .depth = ${x_tile_size_nif},
-    .n_weights = ${y_tile_size_nof},
+    .depth = ${W_tile_size_nif},
+    .n_weights = ${W_tile_size_nof},
     .bitwidth = 8,
     .offset_factor = -128,
     .offset_mode = weightOffsetModeLayerWise
@@ -262,16 +269,15 @@ void ${func_name}(
 
   const nnx_norm_t norm = {
     .mode  = normMode32Bit,
-    .scale = db[i_db_w].scale,
-    .bias  = db[i_db_w].bias,
-    .shift = NE16_NULL
+    .flag_bias  = FLAG_USED,
+    .flag_shift = FLAG_UNUSED
   };
 
   const nnx_quant_t quant = {
     .shift_amount = out_shift,
     .mode = quantMode8Bit,
     .function = quantFunctionRelu,
-    .use_rounding = 0
+    .flag_rounding = FLAG_UNUSED
   };
 
   /////////////////
@@ -290,8 +296,8 @@ void ${func_name}(
 
   for (int i = 0; i < MIN(NNX_TASK_COUNT, total_tiles); i++) {
     nnx_task_init(&nnx_tasks[i]);
-    nnx_conv_${fs1}x${fs2}(&nnx_tasks[i], nnx_weights, nnx_input, nnx_output);
-    nnx_norm_quant(&nnx_tasks[i], norm, quant);
+    nnx_conv_${fs1}x${fs2}${'_dw' if flag_DW else ''}(&(nnx_tasks[i].cfg), nnx_weights, nnx_input, nnx_output);
+    nnx_norm_quant(&(nnx_tasks[i].cfg), norm, quant);
   }
 
 
@@ -318,8 +324,10 @@ void ${func_name}(
 
     const int x_tile_ptr     = db[i_db_x].x;
     const int w_tile_ptr     = db[i_db_w].w;
+% if FLAG_BATCHNORM == 1:
     const int scale_tile_ptr = db[i_db_w].scale;
     const int bias_tile_ptr  = db[i_db_w].bias;
+% endif
     const int y_tile_ptr     = db[i_db_y].y;
 
     ///////////////////////
@@ -346,24 +354,21 @@ void ${func_name}(
     if (is_load_w) {
       W_tile_size_nof = (i_nof + 1 == ${tile_dim_nof}) ? ${W_tile_size_nof_last} : ${W_tile_size_nof};
       W_tile_size_nif = (i_nif + 1 == ${tile_dim_nif}) ? ${W_tile_size_nif_last} : ${W_tile_size_nif};
-      W_length_nif_byte = (i_nif + 1 == ${tile_dim_nif}) ? ${W_tile_size_nif_byte_last} : ${W_tile_nif_byte};
 
-% if flag_DW == 0:
-      DMA_copy_W.ext = dory_get_tile_3d(l2_W, i_nof, 0, i_nif, ${W_tile_size_nof}, ${fs1}*${fs2}, ${W_tile_size_nif}, ${fs1}*${fs2}, ${nif}, 0,0,0,0,0,0, ${W_data_size_byte});
-% else:
-      DMA_copy_W.ext = dory_get_tile_3d(l2_W, i_nof, 0, 0, ${W_tile_size_nof*8/W_data_size_byte}, ${fs1}*${fs2}, ${W_tile_size_nif}, ${fs1}*${fs2}, ${nif}, 0,0,0,0,0,0, ${W_data_size_byte});
-% endif
+      W_tile_ko_len = (i_nof + 1 == ${tile_dim_nof}) ? ${W_tile_ko_len} : ${W_tile_ko_len_last};
+
+      DMA_copy_W.ext = l2_W + ${W_tile_ko_len * W_tile_ki_size} * i_nof;
       DMA_copy_W.loc = w_tile_ptr;
-      DMA_copy_W.length_1d_copy = W_tile_size_nof * W_length_nif_byte;
+      DMA_copy_W.length_1d_copy = W_tile_ko_len * ${W_tile_ki_size};
 
 % if FLAG_BATCHNORM == 1:
       DMA_copy_k.ext = l2_scale + ${k_tile_size_byte_transfer} * i_nof;
       DMA_copy_k.loc = scale_tile_ptr;
-      DMA_copy_k.length_1d_copy = (uint16_t) W_tile_size_nof * ${int(act_dim_bit/8)};
+      DMA_copy_k.length_1d_copy = W_tile_size_nof * ${int(act_dim_bit/8)};
 
       DMA_copy_lambda.ext = l2_bias + ${lambda_tile_size_byte_transfer} * i_nof;
       DMA_copy_lambda.loc = bias_tile_ptr;
-      DMA_copy_lambda.length_1d_copy = (uint16_t) W_tile_size_nof * ${int(act_dim_bit/8)};
+      DMA_copy_lambda.length_1d_copy = W_tile_size_nof * ${int(act_dim_bit/8)};
 % endif
     }
 
@@ -399,7 +404,7 @@ void ${func_name}(
     nnx_task_to_offload = is_border_tile ? &nnx_tasks[NNX_TASK_REMAINDER] : &nnx_tasks[NNX_TASK_BODY];
 
     if (is_border_tile) {
-      nnx_conv_${fs1}x${fs2}_update_dims(nnx_task_to_offload,
+      nnx_conv_${fs1}x${fs2}${'_dw' if flag_DW else ''}_update_dims(&(nnx_task_to_offload->cfg),
           y_tile_size_h, y_tile_size_w, W_tile_size_nof, W_tile_size_nif);
     }
 

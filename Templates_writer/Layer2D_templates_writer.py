@@ -199,16 +199,10 @@ def print_template_layer(x, y_gold, W,
         tk['W_tile_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W * fs1 * fs2 / 8.0))
     # l2 parameters
     if tk['FLAG_BATCHNORM'] == 1:
-        if not nnx:
-            tk['l2_off_k'] = int(
-                math.ceil(tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W / 8.0 + tk['b_size_byte']))
-            tk['l2_off_lambda'] = int(
-                math.ceil((tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W + tk['nof'] * ds_act) / 8.0 + tk['b_size_byte']))
-        else:
-            tk['l2_off_k'] = int(
-                math.ceil(tk['nof'] * ne16_conv1x1_pad_ki(tk['nif']) * fs1 * fs2 * ds_W / 8.0 + tk['b_size_byte']))
-            tk['l2_off_lambda'] = int(
-                math.ceil((tk['nof'] * ne16_conv1x1_pad_ki(tk['nif']) * fs1 * fs2 * ds_W + tk['nof'] * ds_act) / 8.0 + tk['b_size_byte']))
+        tk['l2_off_k'] = int(
+            math.ceil(tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W / 8.0 + tk['b_size_byte']))
+        tk['l2_off_lambda'] = int(
+            math.ceil((tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W + tk['nof'] * ds_act) / 8.0 + tk['b_size_byte']))
     if has_bias == 1:
         if not nnx:
             tk['l2_off_bias'] = int(math.ceil(tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W / 8.0 ))
@@ -385,7 +379,36 @@ def print_template_layer(x, y_gold, W,
             tmpl = Template(filename=root+f"/Templates/{backend}/layer_templates/add_layer_1D_template.c")
         else:
             tmpl = Template(filename=root+f"/Templates/{backend}/layer_templates/add_layer_template.c")
+    
+    # NNX changed/additional variables
+    if not DW:
+        weights_shape = (n_out, n_in, fs1, fs2)
+        weights_tile_shape = (tile_n_out, tile_n_in, fs1, fs2)
+    else:
+        weights_shape = (1, n_out, fs1, fs2)
+        weights_tile_shape = (1, tile_n_out, fs1, fs2)
+
+    nnx_tk = nnx_vars(
+        input_shape=(h_in, w_in, n_in),
+        input_tile_shape=(tile_h_in, tile_w_in, tile_n_in),
+        input_bitwidth=ds_x,
+        output_shape=(h_out, w_out, int(math.ceil(n_out * factor_ch_out))),
+        output_tile_shape=(tile_h_out, tile_w_out, tile_n_out),
+        output_bitwidth=ds_y,
+        weights_shape=weights_shape,
+        weights_tile_shape=weights_tile_shape,
+        weights_bitwidth=ds_W,
+        activation_bitwidth=ds_act,
+        flag_batchnorm=BN,
+        flag_bias=has_bias,
+        flag_depthwise=DW
+        )
+
+    for var in nnx_tk:
+        tk[var] = nnx_tk[var]
+
     s = tmpl.render(TEST=test,VERBOSE=False,ULTRA_VERBOSE=ultra_verbose,PULP_TEST=True,verbose_log=l,**tk)
+
     if 'L2' in test_location:
         save_string = './application/DORY_network/src/' + name_layer.replace("h", "c")
     elif 'L3' in test_location:
@@ -442,3 +465,130 @@ def print_template_layer(x, y_gold, W,
             f.write(s)       
     return l2_dim_input, l2_dim_output, l2_dim_weights, l2_dim_k, l2_dim_lambda, tk['b_size_byte'], buffer_l1_all, n_out, w_out, h_out
 
+
+def div_and_ceil(a, b):
+    return ((a - 1) // b) + 1
+
+
+def rem(a, b):
+    return ((a - 1) % b) + 1
+
+
+def nnx_vars(
+        input_shape,
+        input_tile_shape,
+        input_bitwidth,
+        output_shape,
+        output_tile_shape,
+        output_bitwidth,
+        weights_shape,
+        weights_tile_shape,
+        weights_bitwidth,
+        activation_bitwidth,
+        flag_batchnorm=False,
+        flag_bias=False,
+        flag_depthwise=False,
+        tp_in=16
+):
+    tk = {}
+
+    input_el_size = div_and_ceil(input_bitwidth, 8)
+    output_el_size = div_and_ceil(output_bitwidth, 8)
+    activation_el_size = div_and_ceil(activation_bitwidth, 8)
+
+    weights_ko, weights_ki, weights_h, weights_w = weights_shape
+
+    ko = weights_ko if not flag_depthwise else weights_ki
+
+    tk['weights_size'] = weights_ko * div_and_ceil(weights_ki, tp_in) * weights_bitwidth * weights_h * weights_w * 2
+    offset_from_weight = tk['weights_size']
+
+    # Bias, k, lambda offsets
+    if flag_bias:
+        tk['bias_l2_weights_offset'] = offset_from_weight
+        tk['bias_size'] = ko * div_and_ceil(weights_bitwidth, 8)
+        offset_from_weight += tk['bias_size']
+
+    if flag_batchnorm:
+        tk['k_l2_weights_offset'] = offset_from_weight
+        tk['k_size'] = ko * activation_el_size
+        offset_from_weight += tk['k_size']
+
+        tk['lambda_l2_weights_offset'] = offset_from_weight
+        tk['lambda_size'] = ko * activation_el_size
+        offset_from_weight += tk['lambda_size']
+
+    input_height, input_width, input_depth = input_shape
+
+    tk['x_dma_stride_1d'] = input_depth * input_el_size
+    tk['x_dma_stride_2d'] = input_width * tk['x_dma_stride_1d']
+
+    output_height, output_width, output_depth = output_shape
+
+    tk['y_dma_stride_1d'] = output_depth * output_el_size
+    tk['y_dma_stride_2d'] = output_width * tk['y_dma_stride_1d']
+
+    # L1
+
+    weights_tile_ko, weights_tile_ki, weights_tile_h, weights_tile_w = weights_tile_shape
+
+    if not flag_depthwise:
+        tile_ko = weights_tile_ko
+        weights_ko_len = ko
+        tk['W_tile_ko_len'] = tile_ko
+        tk['W_tile_ki_size'] = div_and_ceil(weights_tile_ki, tp_in) * weights_bitwidth * weights_tile_h * weights_tile_w * 2
+    else:
+        tile_ko = weights_tile_ki
+        weights_ko_len = div_and_ceil(ko, tp_in)
+        tk['W_tile_ko_len'] = div_and_ceil(tile_ko, tp_in)
+        tk['W_tile_ki_size'] = weights_bitwidth * weights_tile_h * weights_tile_w * 2
+
+    tk['W_tile_ko_len_last'] = rem(weights_ko_len, tk['W_tile_ko_len'])
+
+    def feature_len(shape):
+        return shape[0] * shape[1] * shape[2]
+
+    tile_sizes = {
+        'x': feature_len(input_tile_shape) * input_el_size,
+        'y': feature_len(output_tile_shape) * output_el_size,
+        'W': tk['W_tile_ko_len'] * tk['W_tile_ki_size'],
+        'k': tile_ko * activation_el_size,
+        'lambda': tile_ko * activation_el_size,
+        'b': tile_ko * div_and_ceil(weights_bitwidth, 8)
+    }
+
+    n_buffers = {
+        'x': 1 if input_shape == input_tile_shape else 2,
+        'y': 1 if output_shape == output_tile_shape else 2,
+        'W': 1 if weights_shape == weights_tile_shape else 2,
+        'k': 1 if weights_shape == weights_tile_shape else 2,
+        'lambda': 1 if weights_shape == weights_tile_shape else 2,
+        'b': 1 if weights_shape == weights_tile_shape else 2,
+    }
+
+    buffer_sizes = {
+        'x': tile_sizes['x'] * n_buffers['x'],
+        'y': tile_sizes['y'] * n_buffers['y'],
+        'W': tile_sizes['W'] * n_buffers['W'],
+        'k': tile_sizes['k'] * n_buffers['k'],
+        'lambda': tile_sizes['lambda'] * n_buffers['lambda'],
+        'b': tile_sizes['b'] * n_buffers['b']
+    }
+
+    vars = ['x', 'y', 'W']
+
+    if flag_batchnorm:
+        vars.append('k')
+        vars.append('lambda')
+
+    if flag_bias:
+        vars.append('b')
+
+    l1_offset = 0
+
+    for var in vars:
+        tk[f'l1_{var}_offset'] = l1_offset
+        tk[f'l1_{var}_tile_size'] = tile_sizes[var]
+        l1_offset += buffer_sizes[var]
+
+    return tk

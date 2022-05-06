@@ -94,6 +94,8 @@ class Tiler_Conv2D():
         n_in = self.x_shape[0]
         n_out = self.out_ch
         name_include = []
+        # nnx flag
+        nnx = ((fs1==1 and fs2==1) or (fs1==3 and fs2==3))
         # L3 tiling
         tiling = self.get_tiling_conv2d_L3(DW, BN, input_L3, input_dim_constraint, output_weights_dim_constraint, weight_constraint, name)
         if DW == 1:
@@ -221,7 +223,7 @@ class Tiler_Conv2D():
                 [n_out, h_out, w_out],
                 self.buffer_size,
                 full_computation=full_computation,
-                nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
+                nnx=nnx,
                 multiple_buffering_factor=multiple_buffering_factor,
                 name=name)
         else:
@@ -239,7 +241,7 @@ class Tiler_Conv2D():
                 [n_out, h_out, w_out],
                 self.buffer_size,
                 full_computation=full_computation,
-                nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
+                nnx=nnx,
                 multiple_buffering_factor=multiple_buffering_factor,
                 name=name)        
         name_include.append(name)
@@ -333,7 +335,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
+                    nnx=nnx)
             else:          
                 in_dim1, out_dim1, weight_dim1, l2_dim_k, l2_dim_lambda, bias_dim1, l1_dim1, n_out1, w_out1, h_out1 = print_template_layer(
                     X, Y, W,
@@ -360,7 +362,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
+                    nnx=nnx)
             if (p_top + p_bottom) > 0 and (factor_h_in > 1 or factor_h_out > 1):
                 tiling = self.get_tiling_conv2d_like(
                     DW,
@@ -377,7 +379,7 @@ class Tiler_Conv2D():
                     self.buffer_size,
                     full_computation=full_computation,
                     multiple_buffering_factor=multiple_buffering_factor,
-                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
+                    nnx=nnx,
                     name=name) 
                 tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out = tiling
                 in_dim1, out_dim2, weight_dim1, l2_dim_k, l2_dim_lambda, bias_dim1, l1_dim1, n_out1, w_out1, h_out1 = print_template_layer(
@@ -405,7 +407,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
+                    nnx=nnx)
                 if out_dim2 > out_dim1:
                     out_dim1 = out_dim2     
                 h_in_last = h_in
@@ -442,7 +444,7 @@ class Tiler_Conv2D():
                     self.buffer_size,
                     full_computation=full_computation,
                     multiple_buffering_factor=multiple_buffering_factor,
-                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0),
+                    nnx=nnx,
                     name=name)  
                 tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out = tiling
                 in_dim1, out_dim2, weight_dim1, l2_dim_k, l2_dim_lambda, bias_dim1, l1_dim1, n_out1, w_out1, h_out1 = print_template_layer(
@@ -470,7 +472,7 @@ class Tiler_Conv2D():
                     backend = self.backend,
                     number_of_clusters = self.number_of_clusters,
                     dma_parallelization = self.dma_parallelization,
-                    nnx=(((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0))
+                    nnx=nnx)
                 if out_dim2 > out_dim1:
                     out_dim1 = out_dim2   
                 name_include.append(name + '_p_t')
@@ -533,14 +535,30 @@ class Tiler_Conv2D():
             else:
                 n_in_temp = self.x_shape[0]
                 n_out_temp = self.out_ch
-                if self.groups > 1:
-                    weights_dim = int(n_in_temp * fs1 *fs2 * self.BitW / 8) + bias_dim1
+
+                if nnx:
+                    tp_in = 16
+
+                    def div_and_ceil(a, b):
+                        return ((a - 1) // b) + 1
+
+                    if self.groups > 1:  # depthwise
+                        weights_ko = 1
+                    else:
+                        weights_ko = n_out_temp
+
+                    weights_dim = weights_ko * div_and_ceil(n_in_temp, tp_in) * self.BitW * fs1 * fs2 * 2
                 else:
-                    weights_dim = int(n_in_temp * n_out_temp * fs1 *fs2 * self.BitW / 8) + bias_dim1
-                    if (((fs1==1 and fs2==1) or (fs1==3 and fs1==3)) and DW==0):
-                        weights_dim = int(ne16_conv1x1_pad_ki(n_in_temp) * n_out_temp * fs1 *fs2 * self.BitW / 8) + bias_dim1
+                    if self.groups > 1:
+                        weights_dim = int(n_in_temp * fs1 *fs2 * self.BitW / 8)
+                    else:
+                        weights_dim = int(n_in_temp * n_out_temp * fs1 *fs2 * self.BitW / 8)
+
+                weights_dim += bias_dim1
+
                 if BN == 1:
-                    weights_dim +=n_out_temp * int(self.BitActivation / 4)
+                    weights_dim += n_out_temp * int(self.BitActivation / 8) * 2  # times 2 for k and lambda
+
             return in_dim1, out_dim1, weights_dim, l1_dim1, L3_tiling, factor_ch_out, factor_h_out, factor_h_in
         return None
 
@@ -1033,9 +1051,6 @@ class Tiler_Conv2D():
                                full_computation=True,
                                multiple_buffering_factor=2,
                                name='conv'): 
-
-        nnx = True
-
         ###############################################
         ##### PARAMETERS INITIALIZATION ###############
         ###############################################
@@ -1046,8 +1061,6 @@ class Tiler_Conv2D():
         n_in = in_channels * g
         n_in_weights = in_channels * g
         n_out = out_channels
-        h_in = x_shape[-2] + padding_top + padding_bottom
-        w_in = x_shape[-1] + padding_left + padding_right
         h_out = y_shape[-2]
         w_out = y_shape[-1]
         h_in = x_shape[-2]
@@ -1061,55 +1074,42 @@ class Tiler_Conv2D():
         ###############################################
         ##### L2 DIMENSIONS DEFINITION: EARLY EXIT ####
         ###############################################
-        input_dim = self.BitIn * int(n_in/self.number_of_clusters) * h_in * w_in
-        output_dim = self.BitOut * int(n_out/self.number_of_clusters) * h_out * w_out
-        if DW == 0 and not nnx:
-            weight_dim = self.BitW * n_in * int(n_out/self.number_of_clusters) * fs1 * fs2
-        elif not nnx:
-            weight_dim = self.BitW * int(n_out/self.number_of_clusters) * fs1 * fs2
-        elif DW == 0 and nnx:
+        input_dim = self.BitIn * n_in * h_in * w_in
+        output_dim = self.BitOut * n_out * h_out * w_out
+        if DW == 0:
             # Don't touch this line for now...
             # It magically works with this, probably something wrong with the setup
             # of the problem in the case of nnx. It allocates more memory for the weights
             # with the current and line below.
-            weight_dim = self.BitW * n_in * int(n_out/self.number_of_clusters) * fs1 * fs2 
+            weight_dim = self.BitW * n_in * n_out * fs1 * fs2 
             #weight_dim = n_out * int(math.ceil(n_in / 16)) * self.BitW * fs1 * fs2 * 2
             #print(f"n_out = {n_out}; n_in = {n_in}; bitW = {self.BitW}")
             #print(f"fs1 = {fs1}; fs2 = {fs2};")
             #print(f"weight_dim = {weight_dim}")
-        if DW == 0 and not nnx:
-            im2col_dim = 8 * 2 * 8 * fs1 * fs2 * n_in 
-        elif not nnx:
-            im2col_dim = 8 * 8 * (fs1 * (h_in + padding_top + padding_bottom) + fs1) * int( 8 / min(self.BitIn, self.BitOut, self.BitW)) 
-            weight_full_prec_dim = 8 * 8 * fs1 * fs2 * int( 8 / min(self.BitIn, self.BitOut, self.BitW))
-            if self.BitW==8:
-                 weight_full_prec_dim = 0
         else:
-            im2col_dim = 0
-        if 'MatMul' in name or 'Gemm' in name:
-            im2col_dim = 0
-        bn_dim = self.BitActivation * int(n_out/self.number_of_clusters) * 2
-        buffer_total = input_dim + output_dim + weight_dim + im2col_dim + bn_dim
-        if DW == 1 and not nnx:
-            buffer_total+= weight_full_prec_dim
-        if BN == 0:
-            buffer_total -= bn_dim   
-        # return immediatly if the memory fits the L1   
-        if buffer_total <= self.buffer_size * 8:
+            weight_dim = int(math.ceil(n_in / 16)) * self.BitW * fs1 * fs2 * 2
+
+        buffer_total = input_dim + output_dim + weight_dim
+
+        if BN == 1:
+            bn_dim = self.BitActivation * n_out * 2
+            buffer_total += bn_dim   
+
+        # return immediately if the memory fits the L1
+        if buffer_total <= self.buffer_size:
             if fs2 == h_in and h_out == 1:
                 h_in = h_in - padding_bottom
             if fs1 == w_in and w_out == 1:
                 w_in = w_in - padding_right
-            if n_in >= self.number_of_clusters:
-                return (int(n_in/self.number_of_clusters), int(n_out/self.number_of_clusters), h_in, h_out, w_in, w_out)
-            else:
-                return (n_in, int(n_out/self.number_of_clusters), h_in, h_out, w_in, w_out)
-        else:
-            db = multiple_buffering_factor
+            return n_in, n_out, h_in, h_out, w_in, w_out
+
         ###############################################
         ##### TILING OF LAYER USING ORTOOLS ###########
         ###############################################
-        max_obj_value = self.buffer_size * 8 * 32 * 10000
+
+        db = multiple_buffering_factor
+        max_obj_value = self.buffer_size * 8 * 32 * 10000  # Just a big number
+
         ###############################################
         ##### INITIALIZATION OF THE TILING VARS #######
         ###############################################
@@ -1176,83 +1176,44 @@ class Tiler_Conv2D():
         solver.Add(tile_n_out % (int(8/min(self.BitIn, self.BitOut, self.BitW)))==0)
         # if nnx:
         #     solver.Add(tile_n_in % 8 == 0) # non-border tiles MUST be byte-aligned FIXME
+
         ###############################################
         ##### CONSTRAINTS FOR DIMENSION ###############
         ###############################################
         constr_in = db * ds_x_scale * tile_n_in * tile_h_in * tile_w_in
         constr_out = db * ds_y_scale * tile_n_out * tile_h_out * tile_w_out
-        if DW == 0 and not nnx:
-            if self.backend == 'MCU':
-                constr_weight = db * ds_W_scale * tile_n_in * tile_n_out * fs1 * fs2
-            constr_im2col = 32 * 8 * 2 * 8 * fs1 * fs2 * tile_n_in
-        elif not nnx:
-            constr_weight = db * ds_W_scale * n_in * fs1 * fs2
-            constr_im2col = 32 * 8 * 8 * ( fs1 * (tile_h_in + padding_top + padding_bottom) + fs1) * int( 8 / min(self.BitIn, self.BitOut, self.BitW))
-            constr_weight_full_prec = db * 32 * 8 * 8 * fs1 * fs2 * int( 8 / min(self.BitIn, self.BitOut, self.BitW))
-            if self.BitW==8:
-                constr_weight_full_prec = 0
-        else:
-            constr_weight = db * ds_W_scale * (16 * (tile_n_in // 16) + ((tile_n_in % 16) != 0)) * fs1 * fs2 * tile_n_out
-            constr_im2col = 0
-            constr_weight_full_prec = 0
-        if 'MatMul' in name or 'Gemm' in name:
-            constr_im2col = 0
-        constr_bn = ds_bn_scale * tile_n_out * 2 * db
-        constraint_all = constr_in + constr_out + constr_weight + constr_bn + constr_im2col + 20 
-        if DW == 1:
-            constraint_all += constr_weight_full_prec
-        if BN == 0:
-            constraint_all -= constr_bn
-        solver.Add(constraint_all <= 32 * self.buffer_size * 8)
+        constr_weight = db * ds_W_scale * (16 * (tile_n_in // 16) + ((tile_n_in % 16) != 0)) * fs1 * fs2 * tile_n_out
+
+        constraint_all = constr_in + constr_out + constr_weight + 12  # To seperate the buffers
+
+        if BN == 1:
+            constr_bn = ds_bn_scale * tile_n_out * 2 * db  # 2 is for lambda and k
+            constraint_all += constr_bn
+
+        solver.Add(constraint_all <= 32 * self.buffer_size * 8)  # Legacy (scaling everything by 32 * number of bits - which is hardcoded to 8)
+
         ###############################################
         ##### HEURISTICS ADDITION #####################
         ###############################################
+
         obj_expr = solver.IntVar(0, max_obj_value, "obj_expr")
+
         heuristics = 0
-        if DW == 0 and not nnx:
-            ####### Geometrical Shape of Tiles ############
-            heuristics +=  64 * 2000000 * ((tile_h_out - 1) % 8) \
-                         + 64 * 3000000 * ((tile_w_out - 1) % 2) \
-                         + 64 * 1000000 * ((tile_n_out - 1) % 4) \
-                         + 64 * 1000000 * (tile_w_out * tile_h_out >= 16)
-            ####### Total Dimension of Tile ###############
-            heuristics += constraint_all
-            ####### Maximization of Reuse of im2col #######
-            heuristics += 64 * 10000 * tile_n_out \
-                        + 64 * 10000 * ((n_out-zero_variable) % (tile_n_out+1))
-            ####### Geometrical Shape of Border Tiles #####
-            heuristics += 64 * 10000 * ((n_out-zero_variable) % (tile_n_out+1)) \
-                        + 64 * 10000 * (((n_out-zero_variable) % (tile_n_out+1)) % 4) \
-                        + 64 * 20000 * (((h_out-zero_variable) % (tile_h_out+1)) % 8) \
-                        + 64 * 30000 * (((w_out-zero_variable) % (tile_w_out+1)) % 2)
-        elif DW == 1 and not nnx:
-            ####### Geometrical Shape of Tiles ############
-            heuristics += 32 * 10000 * ((tile_n_out > 7)) \
-                        + 64 * 10000 * ((tile_n_out - 1) % int(8*8/min(self.BitIn, self.BitOut, self.BitW))) \
-                        + 32 * 10000 * ((tile_h_out % 4) == 0)
-            ####### Total Dimension of Tile ###############
-            heuristics += constraint_all
-            ####### Maximization of Reuse of im2col #######
-            heuristics += 32 * 1000 * tile_w_out \
-                        + 32 * 1000 * tile_h_out \
-                        + 32 * 100 * (((h_out-zero_variable) % (tile_h_out+1))) \
-                        + 32 * 100 * (((w_out-zero_variable) % (tile_w_out+1)))
-            ####### Geometrical Shape of Border Tiles #####
-            heuristics += 32 * 100 * (((n_out-zero_variable) % (tile_n_out+1)) > 7) \
-                        + 32 * 100 * (((h_out-zero_variable) % (tile_h_out+1)) % 4)
-        elif DW == 0 and nnx:
-            ####### Geometrical Shape of Tiles ############
-            heuristics +=  64 * 3000000 * ((tile_n_in  - 1) % 16)  # input channel divisible by 16 -- highest importance
-            heuristics +=  64 * 2000000 * ((tile_w_out - 1) % 3)   # output width  divisible by 3 -- high importance
-            heuristics +=  64 * 1500000 * ((tile_h_out - 1) % 3)   # output height divisible by 3 -- high importance (slightly less)
-            # heuristics +=  64 * 1000000 * ((tile_n_out - 1) % 32)  # output channel divisible by 32 -- high importance (slightly less)
-            ####### Total Dimension of Tile ###############
-            heuristics += constraint_all
-            ####### Geometrical Shape of Border Tiles #####
-            heuristics += 64 * 10000 * ((n_out-zero_variable) % (tile_n_out+1)) \
-                        + 64 * 30000 * (((n_in-zero_variable)  % (tile_n_in+1))  % 16) \
-                        + 64 * 20000 * (((w_out-zero_variable) % (tile_w_out+1)) % 3) \
-                        + 64 * 10000 * (((h_out-zero_variable) % (tile_h_out+1)) % 3)
+
+        ####### Geometrical Shape of Tiles ############
+        heuristics +=  64 * 3000000 * ((tile_n_in  - 1) % 16)  # input channel divisible by 16 -- highest importance
+        heuristics +=  64 * 2000000 * ((tile_w_out - 1) % 3)   # output width  divisible by 3 -- high importance
+        heuristics +=  64 * 1500000 * ((tile_h_out - 1) % 3)   # output height divisible by 3 -- high importance (slightly less)
+        # heuristics +=  64 * 1000000 * ((tile_n_out - 1) % 32)  # output channel divisible by 32 -- high importance (slightly less)
+
+        ####### Total Dimension of Tile ###############
+        heuristics += constraint_all
+
+        ####### Geometrical Shape of Border Tiles #####
+        heuristics += 64 * 10000 * ((n_out-zero_variable) % (tile_n_out+1)) \
+                    + 64 * 30000 * (((n_in-zero_variable)  % (tile_n_in+1))  % 16) \
+                    + 64 * 20000 * (((w_out-zero_variable) % (tile_w_out+1)) % 3) \
+                    + 64 * 10000 * (((h_out-zero_variable) % (tile_h_out+1)) % 3)
 
         solver.Add(obj_expr == heuristics)
         objective = solver.Maximize(obj_expr, 1)
@@ -1260,8 +1221,10 @@ class Tiler_Conv2D():
         decision_builder = solver.Phase([tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out],
                                         solver.CHOOSE_FIRST_UNBOUND,
                                         solver.ASSIGN_MIN_VALUE)
+
         # Create a solution collector.
         collector = solver.LastSolutionCollector()
+
         # Add the decision variables.
         collector.Add(tile_n_in)
         collector.Add(tile_n_out)
@@ -1269,6 +1232,7 @@ class Tiler_Conv2D():
         collector.Add(tile_h_out)
         collector.Add(tile_w_in)
         collector.Add(tile_w_out)
+
         # Add the objective.
         collector.AddObjective(obj_expr)
         solver.Solve(decision_builder, [objective, collector])
@@ -1282,11 +1246,12 @@ class Tiler_Conv2D():
             tile_w_out = collector.Value(best_solution, tile_w_out)
             if tile_h_in >= h_in:
                 tile_h_in = h_in
-                tile_h_out = int((tile_h_in -(fs1 - 1) + (padding_top + padding_bottom) + (s - 1))/s)
+                tile_h_out = int((tile_h_in - (fs1 - 1) + (padding_top + padding_bottom) + (s - 1))/s)
             if tile_w_in >= w_in:
                 tile_w_in = w_in
-                tile_w_out = int((tile_w_in -(fs2 - 1) + (padding_left + padding_right) + (s - 1))/s)
-            return (tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out)
+                tile_w_out = int((tile_w_in - (fs2 - 1) + (padding_left + padding_right) + (s - 1))/s)
+            return tile_n_in, tile_n_out, tile_h_in, tile_h_out, tile_w_in, tile_w_out
+
         print("  Conv2d ERROR: no L2-L1 tiling found. Exiting...")
         os._exit(0)
         return None

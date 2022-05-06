@@ -217,7 +217,8 @@ class Model_deployment_MCU(Model_deployment):
                         if s[1] == s[2] == 1:
                             nodes_to_deploy.weights = ne16_conv1x1_unroll(w, 8, format='KoHWKi')
                         elif s[1] == s[2] == 3:
-                            nodes_to_deploy.weights = ne16_conv3x3_unroll(w, 8, format='KoHWKi')
+                            dw = 'DW' in nodes_to_deploy.name
+                            nodes_to_deploy.weights = ne16_conv3x3_unroll(w, 8, format='KoHWKi', dw=dw)
                 if PULP_Nodes_Graph[i].weight_bits < 8 and 'DW' in nodes_to_deploy.name:
                     nodes_to_deploy.weights = nodes_to_deploy.weights.reshape(int(nodes_to_deploy.weights.shape[0]/2),2,nodes_to_deploy.weights.shape[1],nodes_to_deploy.weights.shape[2],nodes_to_deploy.weights.shape[3]).transpose(0,2,3,1,4).flatten().tolist()
                 else:
