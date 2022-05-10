@@ -355,7 +355,7 @@ void ${func_name}(
       W_tile_size_nof = (i_nof + 1 == ${tile_dim_nof}) ? ${W_tile_size_nof_last} : ${W_tile_size_nof};
       W_tile_size_nif = (i_nif + 1 == ${tile_dim_nif}) ? ${W_tile_size_nif_last} : ${W_tile_size_nif};
 
-      W_tile_ko_len = (i_nof + 1 == ${tile_dim_nof}) ? ${W_tile_ko_len} : ${W_tile_ko_len_last};
+      W_tile_ko_len = (i_nof + 1 == ${tile_dim_nof}) ? ${W_tile_ko_len_last} : ${W_tile_ko_len};
 
       DMA_copy_W.ext = l2_W + ${W_tile_ko_len * W_tile_ki_size} * i_nof;
       DMA_copy_W.loc = w_tile_ptr;
