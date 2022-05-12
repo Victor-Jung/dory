@@ -2,8 +2,24 @@ import torch
 import numpy as np
 import random
 
+NE16_TP_IN = 16
+
+
 def ne16_conv1x1_pad_ki(ki):
     return 16*(ki // 16 + (1 if ki % 16 != 0 else 0))
+
+
+def div_and_ceil(a, b):
+    return ((a - 1) // b) + 1
+
+
+def ne16_weights_ki_size(ki, qw, fs1, fs2):
+    return div_and_ceil(ki, NE16_TP_IN) * qw * fs1 * fs2 * 2
+
+
+def ne16_weights_size(ko, ki, qw, fs1, fs2):
+    return ko * ne16_weights_ki_size(ki, qw, fs1, fs2)
+
 
 # assuming torch shapes, w must already be in uint format!
 # format --> [Ko, KiMajor, Qw, KiMinor] (binary tensor)

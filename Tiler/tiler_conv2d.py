@@ -38,7 +38,7 @@ import os
 import sys
 
 # accelerator-specific functions for NNX
-from ne16 import ne16_conv1x1_pad_ki
+from ne16 import ne16_weights_size
 
 class Tiler_Conv2D():
     # Class to generate the Tiling of the layer.
@@ -95,7 +95,7 @@ class Tiler_Conv2D():
         n_out = self.out_ch
         name_include = []
         # nnx flag
-        nnx = ((fs1==1 and fs2==1) or (fs1==3 and fs2==3))
+        nnx = ((fs1 == 1 and fs2 == 1) or (fs1 == 3 and fs2 == 3))
         # L3 tiling
         tiling = self.get_tiling_conv2d_L3(DW, BN, input_L3, input_dim_constraint, output_weights_dim_constraint, weight_constraint, name)
         if DW == 1:
@@ -521,40 +521,29 @@ class Tiler_Conv2D():
                 h_out_temp = int(np.floor((h_in_temp - (fs1 - 1) + p_top + p_bottom + (s - 1)) / s))
                 w_out_temp = int(np.floor((w_in_temp - (fs2 - 1) + p_left + p_right + (s - 1)) / s))
                 out_dim1 = n_out_temp * h_out_temp * w_out_temp
+
             if factor_h_in > 1:
                 in_dim1 = in_dim1*2
             else:
                 n_in_temp = self.x_shape[0]
-                in_dim1 = n_in_temp * h_in_temp * w_in_temp
-                if (((fs1==1 and fs2==1) or (fs1==3 and fs2==3)) and DW==0): # FIXME if nnx
-                    n_in_temp = ne16_conv1x1_pad_ki(self.x_shape[0])
                 h_in_temp = self.x_shape[-2]
                 w_in_temp = self.x_shape[-1]
+                in_dim1 = n_in_temp * h_in_temp * w_in_temp
+
             if factor_ch_out > 1:
-                weights_dim = ( weight_dim1 + l2_dim_lambda + l2_dim_k + bias_dim1 ) * 2
+                weights_dim = (weight_dim1 + l2_dim_lambda + l2_dim_k + bias_dim1) * 2
             else:
                 n_in_temp = self.x_shape[0]
                 n_out_temp = self.out_ch
 
                 if nnx:
-                    tp_in = 16
-
-                    def div_and_ceil(a, b):
-                        return ((a - 1) // b) + 1
-
-                    if self.groups > 1:  # depthwise
-                        weights_ko = 1
-                    else:
-                        weights_ko = n_out_temp
-
-                    weights_dim = weights_ko * div_and_ceil(n_in_temp, tp_in) * self.BitW * fs1 * fs2 * 2
+                    w_ko = self.out_ch if self.groups == 1 else 1
+                    weights_dim = ne16_weights_size(w_ko, n_in_temp, self.BitW, fs1, fs2)
                 else:
-                    if self.groups > 1:
-                        weights_dim = int(n_in_temp * fs1 *fs2 * self.BitW / 8)
-                    else:
-                        weights_dim = int(n_in_temp * n_out_temp * fs1 *fs2 * self.BitW / 8)
+                    weights_dim = int(n_out_temp * n_in_temp * fs1 * fs2 * self.BitW / 8)
 
-                weights_dim += bias_dim1
+                if has_bias:
+                    weights_dim += bias_dim1
 
                 if BN == 1:
                     weights_dim += n_out_temp * int(self.BitActivation / 8) * 2  # times 2 for k and lambda
@@ -1083,9 +1072,6 @@ class Tiler_Conv2D():
             # with the current and line below.
             weight_dim = self.BitW * n_in * n_out * fs1 * fs2 
             #weight_dim = n_out * int(math.ceil(n_in / 16)) * self.BitW * fs1 * fs2 * 2
-            #print(f"n_out = {n_out}; n_in = {n_in}; bitW = {self.BitW}")
-            #print(f"fs1 = {fs1}; fs2 = {fs2};")
-            #print(f"weight_dim = {weight_dim}")
         else:
             weight_dim = int(math.ceil(n_in / 16)) * self.BitW * fs1 * fs2 * 2
 
@@ -1210,10 +1196,10 @@ class Tiler_Conv2D():
         heuristics += constraint_all
 
         ####### Geometrical Shape of Border Tiles #####
-        heuristics += 64 * 10000 * ((n_out-zero_variable) % (tile_n_out+1)) \
-                    + 64 * 30000 * (((n_in-zero_variable)  % (tile_n_in+1))  % 16) \
-                    + 64 * 20000 * (((w_out-zero_variable) % (tile_w_out+1)) % 3) \
-                    + 64 * 10000 * (((h_out-zero_variable) % (tile_h_out+1)) % 3)
+        heuristics += 64 * 10000 * ((n_out - zero_variable) % (tile_n_out+1)) \
+                    + 64 * 30000 * (((n_in - zero_variable)  % (tile_n_in+1))  % 16) \
+                    + 64 * 20000 * (((w_out - zero_variable) % (tile_w_out+1)) % 3) \
+                    + 64 * 10000 * (((h_out - zero_variable) % (tile_h_out+1)) % 3)
 
         solver.Add(obj_expr == heuristics)
         objective = solver.Maximize(obj_expr, 1)

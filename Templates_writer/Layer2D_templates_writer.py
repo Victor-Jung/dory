@@ -27,7 +27,7 @@ import os
 import re
 
 # accelerator-specific functions for NNX
-from ne16 import ne16_conv1x1_pad_ki
+from ne16 import ne16_weights_size, ne16_weights_ki_size
 
 def print_template_layer(x, y_gold, W,
                          n_in, h_in, w_in,
@@ -175,12 +175,16 @@ def print_template_layer(x, y_gold, W,
     else:
         tk['b_size_byte'] = 0
 
+    w_tile_ki = tile_n_in * tk['tile_dim_nif']
+    w_tile_ki_last = tk['tile_n_in_last'] * tk['tile_dim_nif']
+
     if DW == 0:
-        tk['W_tile_size_nif'] = tile_n_in * tk['tile_dim_nif']
-        tk['W_tile_size_nif_last'] = tk['tile_n_in_last'] * tk['tile_dim_nif']
+        tk['W_tile_size_nif'] = w_tile_ki
+        tk['W_tile_size_nif_last'] = w_tile_ki_last
     else:
         tk['W_tile_size_nif'] = 1
         tk['W_tile_size_nif_last'] = 1
+
     tk['W_tile_size_byte'] = int(math.ceil(tile_n_out * tk['W_tile_size_nif'] * fs1 * fs2 * ds_W / 8.0))
     if backend == 'Occamy':
     	tk['W_tile_size_byte'] = tk['W_tile_size_byte'] + (tk['W_tile_size_byte'] % 8)
@@ -195,60 +199,45 @@ def print_template_layer(x, y_gold, W,
         tk['W_tile_nif_byte'] = int(math.ceil(tk['W_tile_size_nif'] * ds_W / 8.0))
         tk['W_tile_nif_byte_last'] = int(math.ceil(tk['W_tile_size_nif_last'] * ds_W / 8.0))
     else:
-        tk['W_tile_nif_byte'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif']) * ds_W * fs1 * fs2 / 8.0))
-        tk['W_tile_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W * fs1 * fs2 / 8.0))
+        tk['W_tile_nif_byte'] = ne16_weights_ki_size(w_tile_ki, ds_W, fs1, fs2)
+        tk['W_tile_nif_byte_last'] = ne16_weights_ki_size(w_tile_ki_last, ds_W, fs1, fs2)
     # l2 parameters
     if tk['FLAG_BATCHNORM'] == 1:
         tk['l2_off_k'] = int(
             math.ceil(tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W / 8.0 + tk['b_size_byte']))
         tk['l2_off_lambda'] = int(
             math.ceil((tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W + tk['nof'] * ds_act) / 8.0 + tk['b_size_byte']))
+
     if has_bias == 1:
         if not nnx:
-            tk['l2_off_bias'] = int(math.ceil(tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W / 8.0 ))
+            tk['l2_off_bias'] = int(math.ceil(tk['nof'] * tk['nif'] * fs1 * fs2 * ds_W / 8.0))
         else:
-            tk['l2_off_bias'] = int(math.ceil(tk['nof'] * ne16_conv1x1_pad_ki(tk['nif']) * fs1 * fs2 * ds_W / 8.0 ))
-    if n_in == tile_n_in and w_in == tile_w_in and h_in == tile_h_in:
-        x_buffer_size = int(math.ceil(ds_x * tile_n_in * tile_h_in * tile_w_in / 8.0))
-    else:
-        x_buffer_size = 2 * int(math.ceil(ds_x * tile_n_in * tile_h_in * tile_w_in / 8.0))
-        if x_buffer_size % 16 != 0:
-            x_buffer_size = x_buffer_size
+            tk['l2_off_bias'] = ne16_weights_size(tk['nof'], tk['nif'], ds_W, fs1, fs2)
+
+    is_not_tiled_in = n_in == tile_n_in and w_in == tile_w_in and h_in == tile_h_in
+    db_multiplier_in = 1 if is_not_tiled_in else 2
+
+    x_buffer_size = db_multiplier_in * int(math.ceil(ds_x * tile_n_in * tile_h_in * tile_w_in / 8.0))
     if backend == 'Occamy':
-        if n_in == tile_n_in and w_in == tile_w_in and h_in == tile_h_in:
-            x_buffer_size = int(math.ceil(ds_x * tile_n_in * (tile_h_in + padding_top + padding_bottom) * (tile_w_in + padding_left + padding_right) / 8.0))
-            x_buffer_size = x_buffer_size + (x_buffer_size % 8)
-        else:
-            x_buffer_size = 2 * int(math.ceil(ds_x * tile_n_in * (tile_h_in + padding_top + padding_bottom) * (tile_w_in + padding_left + padding_right) / 8.0))
-            x_buffer_size = x_buffer_size + (x_buffer_size % 16)
-    if n_in == (tile_n_in * number_of_clusters) and w_in == tile_w_in and h_in == tile_h_in and n_out == (tile_n_out * number_of_clusters):
-        y_buffer_size = int(math.ceil(ds_y * tk['y_tile_size_nof'] * tk['y_tile_size_h'] * tk['y_tile_size_w'] / 8.0))
-        if backend == 'Occamy':
-            y_buffer_size = y_buffer_size + (y_buffer_size % 8)
-        if DW == 0:
-            W_buffer_size = int(math.ceil(ds_W * tk['y_tile_size_nof']  * tk['W_tile_size_nif'] * fs1 * fs2 / 8.0))
-            if nnx:
-                W_buffer_size = int(math.ceil(ds_W * tk['y_tile_size_nof']  * ne16_conv1x1_pad_ki(tk['W_tile_size_nif']) * fs1 * fs2 / 8.0))
-            if backend == 'Occamy':
-                W_buffer_size = W_buffer_size + (W_buffer_size % 8)
-        else:
-            W_buffer_size = int(math.ceil(ds_W * tk['y_tile_size_nof']  * 1 * fs1 * fs2 / 8.0))
-            if backend == 'Occamy':
-                W_buffer_size = W_buffer_size + (W_buffer_size % 8)
+        x_buffer_size = db_multiplier_in * int(math.ceil(ds_x * tile_n_in * (tile_h_in + padding_top + padding_bottom) * (tile_w_in + padding_left + padding_right) / 8.0))
+        x_buffer_size = x_buffer_size + (x_buffer_size % 8)
+
+    is_not_tiled_out = n_in == (tile_n_in * number_of_clusters) and w_in == tile_w_in and h_in == tile_h_in and n_out == (tile_n_out * number_of_clusters)
+    db_multiplier_out = 1 if is_not_tiled_out else 2
+
+    y_buffer_size = db_multiplier_out * int(math.ceil(ds_y * tk['y_tile_size_nof'] * tk['y_tile_size_h'] * tk['y_tile_size_w'] / 8.0))
+    if backend == 'Occamy':
+        y_buffer_size = y_buffer_size + (y_buffer_size % 8)
+
+    if nnx:
+        ko_tmp = tk['y_tile_size_nof'] if DW == 0 else 1
+        W_buffer_size = db_multiplier_out * ne16_weights_size(ko_tmp, w_tile_ki, ds_W, fs1, fs2)
     else:
-        y_buffer_size = 2 * int(math.ceil(ds_y * tk['y_tile_size_nof'] * tk['y_tile_size_h'] * tk['y_tile_size_w'] / 8.0))
+        ki_tmp = tk['W_tile_size_nif'] if DW == 0 else 1
+        W_buffer_size = db_multiplier_out * int(math.ceil(ds_W * tk['y_tile_size_nof'] * ki_tmp * fs1 * fs2 / 8.0))
         if backend == 'Occamy':
-            y_buffer_size = y_buffer_size + (y_buffer_size % 16)
-        if DW == 0:
-            W_buffer_size = 2 * int(math.ceil(ds_W * tk['y_tile_size_nof'] * tk['W_tile_size_nif'] * fs1 * fs2 / 8.0))
-            if nnx:
-                W_buffer_size = 2 * int(math.ceil(ds_W * tk['y_tile_size_nof'] * ne16_conv1x1_pad_ki(tk['W_tile_size_nif']) * fs1 * fs2 / 8.0))
-            if backend == 'Occamy':
-                W_buffer_size = W_buffer_size + (W_buffer_size % 16)
-        else:
-            W_buffer_size = 2 * int(math.ceil(ds_W * tk['y_tile_size_nof'] * 1 * fs1 * fs2 / 8.0))
-            if backend == 'Occamy':
-                W_buffer_size = W_buffer_size + (W_buffer_size % 16)
+            W_buffer_size = W_buffer_size + (W_buffer_size % 8)
+
     if tk['FLAG_BATCHNORM'] == 1:
         k_buffer_size = int(n_out * ds_act / 8.0)
         lambd_buffer_size = int(n_out * ds_act / 8.0)
@@ -331,7 +320,7 @@ def print_template_layer(x, y_gold, W,
         tk['W_tile_size_nif_last'] = tk['W_tile_size_nif']
         tk['W_tile_size_nif_byte_last'] = int(math.ceil(tk['W_tile_size_nif_last'] * ds_W / 8.0))
         if nnx:
-            tk['W_tile_size_nif_byte_last'] = int(math.ceil(ne16_conv1x1_pad_ki(tk['W_tile_size_nif_last']) * ds_W * fs1 * fs2 / 8.0))
+            tk['W_tile_size_nif_byte_last'] = ne16_weights_ki_size(tk['W_tile_size_nif_last'], ds_W, fs1, fs2)
     # y last
     tk['y_tile_size_nof_last'] = n_out % tile_n_out if (n_out % tile_n_out) > 0 else tile_n_out
     tk['y_tile_size_h_last'] = h_out % tile_h_out if (h_out % tile_h_out) > 0 else tile_h_out
@@ -354,16 +343,18 @@ def print_template_layer(x, y_gold, W,
     elif conv_order == 'PULP-NN-MAX':
         buffer_l1_all = x_buffer_size + y_buffer_size + tk['k_tile_size_byte'] + tk['lambda_tile_size_byte'] + 40 + tk['b_size_byte']
     tk['buffer_l1_all'] = buffer_l1_all
-    l2_dim_input = (n_in) * tk['x_h'] * tk['x_w']
+    l2_dim_input = n_in * tk['x_h'] * tk['x_w']
     l2_dim_output = (tk['nof']) * tk['y_h'] * tk['y_w']
-    if DW == 0:
-        l2_dim_weights = int(tk['nof'] * tk['nif'] * tk['fs1'] * tk['fs2'] * ds_W / 8.0)
-        if nnx:
-            l2_dim_weights = int(tk['nof'] * ne16_conv1x1_pad_ki(tk['nif']) * tk['fs1'] * tk['fs2'] * ds_W / 8.0)
+
+    if nnx:
+        n_out_temp = tk['nof'] if DW == 0 else 1
+        l2_dim_weights = ne16_weights_size(n_out_temp, n_in, ds_W, tk['fs1'], tk['fs2'])
     else:
-        l2_dim_weights = int(tk['nof'] * 1 * tk['fs1'] * tk['fs2'] * ds_W / 8.0)
+        l2_dim_weights = int(tk['nof'] * tk['nif'] * tk['fs1'] * tk['fs2'] * ds_W / 8.0)
+
     l2_dim_k = k_buffer_size
     l2_dim_lambda = lambd_buffer_size
+
     root = '/'.join(os.getcwd().split('/')[:-1])
     if nnx:
         tmpl = Template(filename=root+f"/Templates/{backend}/layer_templates/layer_template_nnx.c")
@@ -466,14 +457,6 @@ def print_template_layer(x, y_gold, W,
     return l2_dim_input, l2_dim_output, l2_dim_weights, l2_dim_k, l2_dim_lambda, tk['b_size_byte'], buffer_l1_all, n_out, w_out, h_out
 
 
-def div_and_ceil(a, b):
-    return ((a - 1) // b) + 1
-
-
-def rem(a, b):
-    return ((a - 1) % b) + 1
-
-
 def nnx_vars(
         input_shape,
         input_tile_shape,
@@ -492,6 +475,12 @@ def nnx_vars(
 ):
     tk = {}
 
+    def div_and_ceil(a, b):
+        return ((a - 1) // b) + 1
+
+    def rem(a, b):
+        return ((a - 1) % b) + 1
+
     input_el_size = div_and_ceil(input_bitwidth, 8)
     output_el_size = div_and_ceil(output_bitwidth, 8)
     activation_el_size = div_and_ceil(activation_bitwidth, 8)
@@ -500,7 +489,7 @@ def nnx_vars(
 
     ko = weights_ko if not flag_depthwise else weights_ki
 
-    tk['weights_size'] = weights_ko * div_and_ceil(weights_ki, tp_in) * weights_bitwidth * weights_h * weights_w * 2
+    tk['weights_size'] = ne16_weights_size(weights_ko, weights_ki, weights_bitwidth, weights_h, weights_w)
     offset_from_weight = tk['weights_size']
 
     # Bias, k, lambda offsets
@@ -575,20 +564,20 @@ def nnx_vars(
         'b': tile_sizes['b'] * n_buffers['b']
     }
 
-    vars = ['x', 'y', 'W']
+    layer_data_arrays = ['x', 'y', 'W']
 
     if flag_batchnorm:
-        vars.append('k')
-        vars.append('lambda')
+        layer_data_arrays.append('k')
+        layer_data_arrays.append('lambda')
 
     if flag_bias:
-        vars.append('b')
+        layer_data_arrays.append('b')
 
     l1_offset = 0
 
-    for var in vars:
-        tk[f'l1_{var}_offset'] = l1_offset
-        tk[f'l1_{var}_tile_size'] = tile_sizes[var]
-        l1_offset += buffer_sizes[var]
+    for data_array in layer_data_arrays:
+        tk[f'l1_{data_array}_offset'] = l1_offset
+        tk[f'l1_{data_array}_tile_size'] = tile_sizes[data_array]
+        l1_offset += buffer_sizes[data_array]
 
     return tk
