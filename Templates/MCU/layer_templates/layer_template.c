@@ -394,7 +394,7 @@ void ${func_name}(
   % elif flag_DW == 0 and 'mixed' in optional_type  and ('Gemm' in func_name or 'MatMul' in func_name) and y_data_size_byte == 32:
     ${"x" if 'hw' in optional_type else ""}pulp_nn_linear_u${x_data_size_byte}_i${y_data_size_byte}_i${W_data_size_byte}(
   % elif flag_DW == 0 and 'mixed' in optional_type  and ('Gemm' in func_name or 'MatMul' in func_name):
-    pulp_nn_linear_u${x_data_size_byte}_u${y_data_size_byte}_i${W_data_size_byte}(
+    ${"x" if 'hw' in optional_type else ""}pulp_nn_linear_u${x_data_size_byte}_u${y_data_size_byte}_i${W_data_size_byte}(
   % elif flag_DW == 1 and optional_type == '8bit' and fs1 == 3 and fs2 == 3 and stride==1:
     pulp_nn_depthwise_generic(
   % elif flag_DW == 1 and optional_type == '8bit' and fs1*fs2 < 4:
@@ -420,7 +420,8 @@ void ${func_name}(
         1, out_shift,
         % endif
       % endif
-      x_tile_size_nif_exec, y_tile_size_nof${"," if "_last" not in func_name else ""}
+      x_tile_size_nif_exec, y_tile_size_nof${
+      "," if "_last" not in func_name else ""}
       % if '_last' not in func_name:
       ${FLAG_RELU}, ${FLAG_BATCHNORM}
       % endif
@@ -441,7 +442,11 @@ void ${func_name}(
       % else:
       0, 0,
       % endif
+      % if FLAG_RELU == 1:
       out_mult, out_shift,
+      % else:
+      0, out_shift,
+      % endif
       x_tile_size_w_exec, x_tile_size_h_exec, x_tile_size_nif_exec,
       y_tile_size_w, y_tile_size_h, y_tile_size_nof,
       ${fs2}, ${fs1},
