@@ -28,8 +28,8 @@ else
 CORE= $(CORE)
 endif
 
-PULP_CFLAGS += -DNUM_CORES=$(CORE) -IDORY_network/inc -O3 -g3  -fno-tree-loop-distribute-patterns -flto
-PULP_LDFLAGS = -lm -lg -flto
+PULP_CFLAGS += -DNUM_CORES=$(CORE) -IDORY_network/inc -O3 -g3  -fno-tree-loop-distribute-patterns
+PULP_LDFLAGS = -lm -lg
 % if platform == 'GAP8':
 include $(GAP_SDK_HOME)/tools/rules/pulp_rules.mk
 % elif platform == 'FPGA':
