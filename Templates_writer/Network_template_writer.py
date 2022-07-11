@@ -126,13 +126,9 @@ def print_template_network(
     tmp = [x.__dict__ for x in PULP_Nodes_Graph]
     # remove weights, kappas and lambdas from nodes
     for x in tmp:
-        try:
-            _ = x.pop('weights')
-            _ = x.pop('k')
-            _ = x.pop('lambda')
-        except KeyError:
-            pass
+        for kk in ['weights', 'k', 'lambda', 'weights_raw']:
+            try:
+                _ = x.pop(kk)
+            except KeyError:
+                pass
     tk['PULP_Nodes_Graph'] = tmp
-    # dump to json
-    with open('./application/template_data.json', 'w') as f:
-        json.dump(tk, f, indent=4)
