@@ -133,7 +133,7 @@ def print_template_layer_L3(node, tmpl_dir, out_dir):
     with open(save_string, "w") as f:
         f.write(s)
 
-def print_template_layer(node, layer_type, tmpl_dir, out_dir):
+def print_template_layer(node, layer_type, tmpl_dir, out_dir, double_buffering = 2):
     ks =      node.kernel_shape
     inp_dim = node.tiling_dimensions["L2"]["input_dimensions"][1:]
     out_dim = node.tiling_dimensions["L2"]["output_dimensions"][1:]
@@ -227,6 +227,7 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
         tk["outmul"] = node.outmul["value"]
         tk["outadd"] = node.outadd["value"]
         tk["outshift"] = node.outshift["value"]
+    tk['out_shift'] = node.outshift["value"] if 'outshift' in node.constant_names else 0
 
     DW = tk['flag_DW']
     has_bias = tk['has_bias']
@@ -239,8 +240,12 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
     ################################################################################
 
     tk['nof'] = n_out
-    tk['factor'] = node.tiling_dimensions["L3"]["output_dimensions"][0] / n_out
+    if node.HW_description['memory']['levels'] > 2:
+        tk['factor'] = node.tiling_dimensions["L3"]["output_dimensions"][0] / n_out
+    else:
+        tk['factor'] = 1
     # x parameters
+    tk['double_buffering'] = double_buffering
     tk['x_h'] = h_in
     tk['x_w'] = w_in
     tk['x_data_size_byte'] = node.input_activation_bits
@@ -305,7 +310,7 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
     if n_in == tile_n_in and w_in == tile_w_in and h_in == tile_h_in:
         x_buffer_size = int(math.ceil(ds_x * tile_n_in * tile_h_in * tile_w_in / 8.0))
     else:
-        x_buffer_size = 2 * int(math.ceil(ds_x * tile_n_in * tile_h_in * tile_w_in / 8.0))
+        x_buffer_size = tk['double_buffering'] * int(math.ceil(ds_x * tile_n_in * tile_h_in * tile_w_in / 8.0))
         if x_buffer_size % 16 != 0:
             x_buffer_size = x_buffer_size
     if (n_in == (tile_n_in * number_of_clusters) and w_in == tile_w_in and h_in == tile_h_in and n_out == (tile_n_out * number_of_clusters) and n_in > number_of_clusters) \
@@ -319,12 +324,12 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
         else:
             W_buffer_size = 0
     else:
-        y_buffer_size = 2 * int(math.ceil(ds_y * tk['y_tile_size_nof'] * tk['y_tile_size_h'] * tk['y_tile_size_w'] / 8.0))
+        y_buffer_size = tk['double_buffering'] * int(math.ceil(ds_y * tk['y_tile_size_nof'] * tk['y_tile_size_h'] * tk['y_tile_size_w'] / 8.0))
         if "Addition" not in node.name and "Pool" not in node.name:
             if DW == 0:
-                W_buffer_size = 2 * int(math.ceil(ds_W * tk['y_tile_size_nof'] * tk['W_tile_size_nif'] * fs1 * fs2 / 8.0))
+                W_buffer_size = tk['double_buffering'] * int(math.ceil(ds_W * tk['y_tile_size_nof'] * tk['W_tile_size_nif'] * fs1 * fs2 / 8.0))
             else:
-                W_buffer_size = 2 * int(math.ceil(ds_W * tk['y_tile_size_nof'] * 1 * fs1 * fs2 / 8.0))
+                W_buffer_size = tk['double_buffering'] * int(math.ceil(ds_W * tk['y_tile_size_nof'] * 1 * fs1 * fs2 / 8.0))
         else:
             W_buffer_size = 0
     if tk['FLAG_BATCHNORM'] == 1:
@@ -348,8 +353,8 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
                 tk['k_tile_size_byte'] = int(math.ceil(tile_n_out * ds_act / 8.0))
                 tk['lambda_tile_size_byte'] = int(math.ceil(tile_n_out * ds_act / 8.0))
             else:
-                tk['k_tile_size_byte'] = int(math.ceil(tile_n_out * ds_act / 8.0 * 2))
-                tk['lambda_tile_size_byte'] = int(math.ceil(tile_n_out * ds_act / 8.0 * 2))
+                tk['k_tile_size_byte'] = int(math.ceil(tile_n_out * ds_act / 8.0 * tk['double_buffering']))
+                tk['lambda_tile_size_byte'] = int(math.ceil(tile_n_out * ds_act / 8.0 * tk['double_buffering']))
         if has_bias == 1:
             tk['bias_tile_size_byte'] = tile_n_out * int(ds_bias / 8.0)
             tk['b_size_byte'] = int(n_out)* int(ds_bias / 8.0)
@@ -406,7 +411,7 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
         buffer_l1_all = W_buffer_size + x_buffer_size + y_buffer_size + tk['k_tile_size_byte'] + tk['lambda_tile_size_byte'] + 40 + tk['b_size_byte']
         tk['im2col_dim'] = (8 * (fs1 * (tile_h_in + padding_bottom + padding_top) + fs1)) * int( 8 / min(ds_x, ds_y, ds_W))
     elif "Addition" in node.name:
-        buffer_l1_all = x_buffer_size * 2 + y_buffer_size + tk['k_tile_size_byte'] + tk['lambda_tile_size_byte'] + 40 + tk['b_size_byte']
+        buffer_l1_all = x_buffer_size * tk['double_buffering'] + y_buffer_size + tk['k_tile_size_byte'] + tk['lambda_tile_size_byte'] + 40 + tk['b_size_byte']
     elif "Pool" in node.name:
         buffer_l1_all = x_buffer_size + y_buffer_size + tk['k_tile_size_byte'] + tk['lambda_tile_size_byte'] + 40 + tk['b_size_byte']
     tk['buffer_l1_all'] = buffer_l1_all
@@ -414,7 +419,6 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
     # only used for avg pool layers
     tk['out_add'] = node.outadd["value"] if 'outadd' in node.constant_names else 0
     tk['out_mul'] = node.outmul["value"] if 'outmul' in node.constant_names else 1
-    tk['out_shift'] = node.outshift["value"] if 'outshift' in node.constant_names else 0
 
     if "Addition" not in node.name and "Pool" not in node.name:
         tmpl = Template(filename=os.path.join(tmpl_dir, "layer_L2_c_conv_template.c"))

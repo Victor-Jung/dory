@@ -17,7 +17,12 @@
  * limitations under the License.
  */
 
+% if sdk == 'gap_sdk':
 #include "pulp.h"
+% endif
 #include "dory.h"
+#include "pulp_nn_kernels.h"
 
-void  ${func_name}(layer* layer_i);
+void  ${func_name}(
+  void *args
+);

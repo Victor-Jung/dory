@@ -15,39 +15,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-APP = main
+PULP_APP = main
 
-APP_SRCS := $(wildcard DORY_network/src/*.c) 
+PULP_APP_SRCS := $(wildcard DORY_network/src/*.c) 
+PULP_INC_PATHS += -DSDK
 
-ifndef CORE
-CORE=1
-else
-CORE= $(CORE)
-endif
+PULP_CFLAGS = -Wall -pedantic -O0 -g -IDORY_network/inc
+## APP_LDFLAGS += -lm -flto
 
-% if sdk == 'gap_sdk':
-APP_CFLAGS += -DNUM_CORES=$(CORE) -DGAP_SDK=1 -IDORY_network/inc -O3 -w -fno-tree-loop-distribute-patterns -flto
-APP_LDFLAGS += -lm -flto
-% elif sdk == 'pulp-sdk':
-APP_CFLAGS += -DNUM_CORES=$(CORE) -DPULP_SDK=1 -IDORY_network/inc -O3 -w -fno-tree-loop-distribute-patterns -flto
-APP_LDFLAGS += -lm -flto
-% endif
-
-% if sdk == 'pulp-sdk':
-CONFIG_HYPERRAM = 1
-CONFIG_HYPERFLASH = 1
-% endif
-
-% for i,layer in enumerate(layers_w):
-% if i==0:
-FLASH_FILES = DORY_network/${layer}
-% else:
-FLASH_FILES += DORY_network/${layer}
-%endif
-% endfor
-FLASH_FILES += DORY_network/inputs.hex
-
-READFS_FILES := $(FLASH_FILES)
-PLPBRIDGE_FLAGS += -f
-
-include $(RULES_DIR)/pmsis_rules.mk
+include $(PULP_SDK_HOME)/install/rules/pulp.mk

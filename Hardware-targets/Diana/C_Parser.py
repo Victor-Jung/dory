@@ -22,10 +22,14 @@
 import json
 import os
 import numpy as np
+from mako.template import Template
+from collections import OrderedDict
+import copy 
 
 # DORY modules
 from Parsers.Parser_HW_to_C import Parser_HW_to_C
 import Utils.Templates_writer.Layer2D_template_writer as Layer2D_writer
+import Utils.Templates_writer.writer_utils as utils
 
 # Directory
 file_path = "/".join(os.path.realpath(__file__).split("/")[:-1])
@@ -42,61 +46,17 @@ class C_Parser(Parser_HW_to_C):
         super().__init__(graph, os.path.join(config_file_dir, os.path.dirname(config_file["onnx_file"])), HW_description, verbose_level, perf_layer, "Makefile", app_directory)
 
     def copy_backend_files(self, node):
-        if self.precision_library == 'auto':
-            self.precision_library = '8bit'
-            if "Addition" not in node.name and "Pool" not in node.name:
-                if node.get_parameter('output_activation_bits') < 8 or node.get_parameter('input_activation_bits') < 8 or node.get_parameter('weight_bits') < 8:
-                    self.precision_library = 'mixed-sw'
-            else:
-                if node.get_parameter('output_activation_bits') < 8 or node.get_parameter('input_activation_bits') < 8:
-                    self.precision_library = 'mixed-sw'
-
         root = os.path.dirname(__file__)
-        if self.precision_library == "8bit":
-            files = os.path.join(root, "Backend_Kernels/pulp-nn/")
-        elif self.precision_library == "mixed-sw":
-            files = os.path.join(root, "Backend_Kernels/pulp-nn-mixed/XpulpV2/")
-        elif self.precision_library == "mixed-hw":
-            files = os.path.join(root, "Backend_Kernels/pulp-nn-mixed/XpulpNN/")
-        if os.listdir(os.path.join(files, "{}bit/include".format(self.source_Constant_bits_library)))[0] not in os.listdir(os.path.join(self.app_directory, "DORY_network/inc")):
-            for file in os.listdir(os.path.join(files, "{}bit/include".format(self.source_Constant_bits_library))):
-                file_to_copy = os.path.join(files, "{}bit/include".format(self.source_Constant_bits_library), file)
+        files = os.path.join(root, "Backend_Kernels/dory-hal/")
+        if os.listdir(os.path.join(files, "include".format(self.source_Constant_bits_library)))[0] not in os.listdir(os.path.join(self.app_directory, "DORY_network/inc")):
+            for file in os.listdir(os.path.join(files, "include".format(self.source_Constant_bits_library))):
+                file_to_copy = os.path.join(files, "include".format(self.source_Constant_bits_library), file)
                 os.system('cp "{}" {}'.format(file_to_copy, os.path.join(self.app_directory, 'DORY_network/inc')))
-        if self.precision_library == "8bit":
-            if os.listdir(os.path.join(files, "{}bit/src".format(self.source_Constant_bits_library)))[0] not in os.listdir(os.path.join(self.app_directory, "DORY_network/src")):
-                for file in os.listdir(os.path.join(files, "{}bit/src".format(self.source_Constant_bits_library))):
-                    file_to_copy = os.path.join(files, "{}bit/src".format(self.source_Constant_bits_library), file)
-                    os.system('cp "{}" {}'.format(file_to_copy, os.path.join(self.app_directory, 'DORY_network/src')))
-        elif self.precision_library == "mixed-sw":
-            Input_bits = str(node.get_parameter('input_activation_bits'))
-            Output_bits = str(node.get_parameter('output_activation_bits'))
-            Input_type = node.get_parameter('input_activation_type')[0]
-            Output_type = node.get_parameter('output_activation_type')[0]
-            in_out = "_" + Input_type + Input_bits + "_" + Output_type + Output_bits
-            if "Addition" in node.name:
-                in1_in2_out = "_" + Input_type + Input_bits + "_" + node.get_parameter('second_input_activation_type')[0] + str(node.get_parameter('second_input_activation_bits')) + "_" + Output_type + Output_bits
-                file = 'Add/pulp_nn_add{}.c'.format(in1_in2_out)
-            elif "Pool" in node.name and "Max" in node.op_type:
-                file = 'Pooling/MaxPool/pulp_nn_maxpool{}.c'.format(in_out)
-            elif "Pool" in node.name and ("Avg" in node.op_type or "Average" in node.op_type):
-                file = 'Pooling/AvgPool/pulp_nn_avgpool{}.c'.format(in_out)
-
-            in_out_weights = "_" + Input_type + Input_bits + "_" + Output_type + Output_bits + "_" + node.get_parameter('weight_type')[0] + str(node.get_parameter('weight_bits'))
-            if "Conv" in node.name and node.group > 1:
-                file = 'Depthwise/pulp_nn_depthwise{}.c'.format(in_out_weights)
-            elif "Conv" in node.name and node.group == 1:
-                file = 'Convolution/pulp_nn_conv{}.c'.format(in_out_weights)
-            elif "FullyConnected" in node.name and node.output_activation_bits == 32: 
-                file = 'LinearNoQuant/pulp_nn_linear{}.c'.format(in_out_weights)
-            elif "FullyConnected" in node.name:     
-                file = 'LinearQuant/pulp_nn_linear{}.c'.format(in_out_weights)
-            file_to_copy = os.path.join(files, "{}bit/src".format(self.source_Constant_bits_library), file)
-            os.system('cp "{}" {}'.format(file_to_copy, os.path.join(self.app_directory, 'DORY_network/src')))
-            if ("Conv" in node.name or "FullyConnected" in node.name) and node.get_parameter('output_activation_bits') != 32:
-                in_out_weights = "_" + Input_type + "8" + "_" + Output_type + Output_bits + "_" + node.get_parameter('weight_type')[0] + str(node.get_parameter('weight_bits'))
-                file = 'MatrixMultiplication/pulp_nn_matmul{}.c'.format(in_out_weights)
-                file_to_copy = os.path.join(files, "{}bit/src".format(self.source_Constant_bits_library), file)
+        if os.listdir(os.path.join(files, "src".format(self.source_Constant_bits_library)))[0] not in os.listdir(os.path.join(self.app_directory, "DORY_network/src")):
+            for file in os.listdir(os.path.join(files, "src".format(self.source_Constant_bits_library))):
+                file_to_copy = os.path.join(files, "src".format(self.source_Constant_bits_library), file)
                 os.system('cp "{}" {}'.format(file_to_copy, os.path.join(self.app_directory, 'DORY_network/src')))
+        
 
     def mapping_layers_to_C_files(self):
         print("\nMapping the layers files to their templates and copying the kernels associated.")
@@ -104,35 +64,107 @@ class C_Parser(Parser_HW_to_C):
         out_dir = '{}/DORY_network'.format(self.app_directory)
         for i, node in enumerate(self.HWgraph):
             self.copy_backend_files(node)
-            if (node.tiling_dimensions["L3"]["input_dimensions"] != node.tiling_dimensions["L2"]["input_dimensions"]) or (node.tiling_dimensions["L3"]["output_dimensions"] != node.tiling_dimensions["L2"]["output_dimensions"]) or (node.tiling_dimensions["L3"]["weights_dimensions"] != node.tiling_dimensions["L2"]["weights_dimensions"]):
-                Layer2D_writer.print_template_layer_L3(node, tmpl_dir, out_dir)
-                if node.tiling_dimensions["L3"]["input_dimensions"][1] > node.tiling_dimensions["L2"]["input_dimensions"][1]:
-                    node.tiling_dimensions["L2"]["output_dimensions"][1]  = int(np.floor((node.tiling_dimensions["L2"]["input_dimensions"][1] - node.kernel_shape[0] + node.strides[0]) / node.strides[0]))
-                if node.tiling_dimensions["L3"]["output_dimensions"][1] > node.tiling_dimensions["L2"]["output_dimensions"][1]:
-                    node.tiling_dimensions["L2"]["input_dimensions"][1]   = node.tiling_dimensions["L2"]["output_dimensions"][1] * node.strides[0] + node.kernel_shape[0] - node.strides[0]
-                node.name = node.name + "_L2"
-                padding = node.pads
-                node.pads = [0, padding[1], 0, padding[3]]
-                Layer2D_writer.print_template_layer(node, self.precision_library, tmpl_dir, out_dir)
-                node.name = node.name[:-3]
-                if padding[0] > 0:
-                    node.name = node.name + "_L2_p_t"
-                    node.pads = [padding[0], padding[1], 0, padding[3]]
-                    Layer2D_writer.print_template_layer(node, self.precision_library, tmpl_dir, out_dir)
-                    node.name = node.name[:-1] + "b"
-                    node.pads = [0, padding[1], padding[2], padding[3]]
-                    node.tiling_dimensions["L2"]["input_dimensions"][1] -= (padding[2] - ((node.tiling_dimensions["L3"]["input_dimensions"][1] + padding[0] + padding[2]) - (node.tiling_dimensions["L3"]["output_dimensions"][1]* node.strides[0] + node.kernel_shape[0] - node.strides[0])))
-                    if node.tiling_dimensions["L1"]["input_dimensions"][1] > node.tiling_dimensions["L2"]["input_dimensions"][1]:
-                        node.tiling_dimensions["L1"]["input_dimensions"][1] = node.tiling_dimensions["L2"]["input_dimensions"][1]
-                    if node.tiling_dimensions["L1"]["output_dimensions"][1] > node.tiling_dimensions["L2"]["output_dimensions"][1]:
-                        node.tiling_dimensions["L1"]["output_dimensions"][1] = node.tiling_dimensions["L2"]["output_dimensions"][1]
-                    Layer2D_writer.print_template_layer(node, self.precision_library, tmpl_dir, out_dir)
-                    node.name = node.name[:-7]
+            Layer2D_writer.print_template_layer(node, self.precision_library, tmpl_dir, out_dir)
+
+    def create_hex_weights_files(self):
+        print("\nGenerating .h weight files.")
+        weights_vectors = []
+        weights_dimensions = []
+        for i, node in enumerate(self.HWgraph):
+            constants = [0, 0, 0, 0]
+            for name in node.constant_names:
+                if "weight" in name:
+                    constants[0] = name
+                elif "bias" in name:
+                    constants[1] = name
+                elif "k" == name:
+                    constants[2] = name
+                elif "l" == name:
+                    constants[3] = name
+            weights = np.asarray([])
+            save_vector = 0
+            for i in np.arange(4):
+                if constants[i]!= 0:
+                    if i==0:
+                        temp = np.asarray(node.__dict__[constants[i]]["value"])
+                        temp = temp.reshape(int(temp.shape[0]/4), 4)
+                        temp1 = copy.deepcopy(temp)
+                        temp[:,0] = temp1[:,3] 
+                        temp[:,1] = temp1[:,2] 
+                        temp[:,2] = temp1[:,1] 
+                        temp[:,3] = temp1[:,0]
+                        node.__dict__[constants[i]]["value"] = temp.flatten()
+                    if i==1:
+                        new_weights = []
+                        for pos in range(4):
+                            for ch in range(int(np.asarray(node.__dict__[constants[i]]["value"]).shape[0]/16)):
+                                for pos_in in [3,2,1,0]:
+                                    new_weights.append(node.__dict__[constants[i]]["value"][pos+4*(ch*4+pos_in)])
+                        node.__dict__[constants[i]]["value"] = new_weights
+            for batch in np.arange(0, int(np.floor((getattr(node, 'output_channels')+15)/16))):
+                for i in [0, 1]:
+                    if constants[i]!= 0:
+                        if i==0:  
+                            dim = getattr(node, 'input_channels') * 16 * np.prod(getattr(node, 'kernel_shape'))
+                            weights = np.concatenate((weights,node.__dict__[constants[i]]["value"][(batch*dim):((batch+1)*dim)]))
+                        if i==1:  
+                            weights = np.concatenate((weights,node.__dict__[constants[i]]["value"][(batch*16*4):((batch+1)*16*4)]))
+                        save_vector = 1
+            for i in [2, 3]:
+                if constants[i]!= 0:
+                    weights = np.concatenate((weights,node.__dict__[constants[i]]["value"]))
+
+            while len(weights) % 4 != 0:
+                weights = np.concatenate((weights, np.asarray([0])))
+            if save_vector == 1:
+                weights_vectors.append(utils.print_test_vector(weights, 'char'))
+                weights_dimensions.append(weights.shape[0])
             else:
-                if node.tiling_dimensions["L2"]["input_dimensions"][2] == node.tiling_dimensions["L1"]["input_dimensions"][2]:
-                    node.tiling_dimensions["L1"]["output_dimensions"][2] = int((node.tiling_dimensions["L1"]["input_dimensions"][2] + (node.pads[1] + node.pads[3]) - node.kernel_shape[1] + node.strides[1]) / node.strides[1])
-                if node.tiling_dimensions["L2"]["input_dimensions"][1] == node.tiling_dimensions["L1"]["input_dimensions"][1]:
-                    node.tiling_dimensions["L1"]["output_dimensions"][1] = int((node.tiling_dimensions["L1"]["input_dimensions"][1] + (node.pads[0] + node.pads[2]) - node.kernel_shape[0] + node.strides[0]) / node.strides[0])
-                Layer2D_writer.print_template_layer(node, self.precision_library, tmpl_dir, out_dir)
+                weights_vectors.append(['0'])
+                weights_dimensions.append(0)
+        tk = OrderedDict([])
+        tk['weights_vectors'] = weights_vectors
+        tk['weights_dimensions'] = weights_dimensions
+        tk['DORY_HW_graph'] = self.HWgraph
+        root = os.path.dirname(__file__)
+        tmpl = Template(filename=os.path.join(root, "Templates/weights_h_template.h"))
+        s = tmpl.render(**tk)
+        save_string = os.path.join(self.app_directory, 'DORY_network/inc/weights.h') 
+        with open(save_string, "w") as f:
+            f.write(s)
+        tmpl = Template(filename=os.path.join(root, "Templates/weights_definition_h_template.h"))
+        s = tmpl.render(**tk)
+        save_string = os.path.join(self.app_directory, 'DORY_network/inc/weights_definition.h') 
+        with open(save_string, "w") as f:
+            f.write(s)
 
-
+    def create_hex_input(self):    
+        print("\nGenerating .h input file.")
+        try:
+            x_in = np.loadtxt(os.path.join(self.network_directory, 'input.txt'), delimiter=',', dtype=np.uint8, usecols=[0])
+            x_in_w = int(x_in.shape[0]/(self.HWgraph[0].input_channels*self.HWgraph[0].input_dimensions[0]))
+            x_in = x_in.reshape(self.HWgraph[0].input_channels, self.HWgraph[0].input_dimensions[0], x_in_w)
+            npad = ((0, 0), (0,0), (0, (16 - (x_in_w % 16)) % 16))
+            temp = np.pad(x_in, pad_width=npad, mode='constant', constant_values=0)
+            x_in = temp.flatten()
+        except FileNotFoundError:
+            print(f"========= WARNING ==========\nInput file {os.path.join(self.network_directory, 'input.txt')} not found; generating random inputs!")
+            x_in = np.random.randint(low=0, high=2*8 - 1,
+                                     size=self.group * self.input_channels * self.input_dimensions[0] * self.input_dimensions[1],
+                                     dtype=np.uint8)
+        temp = x_in.reshape(int(x_in.shape[0]/4), 4)
+        temp1 = copy.deepcopy(temp)
+        temp[:,0] = temp1[:,3] 
+        temp[:,1] = temp1[:,2] 
+        temp[:,2] = temp1[:,1] 
+        temp[:,3] = temp1[:,0] 
+        input_values = utils.print_test_vector(temp.flatten(), 'char')
+        tk = OrderedDict([])
+        tk['input_values'] = input_values
+        tk['dimension'] = len(x_in)
+        root = os.path.dirname(__file__)
+        tmpl = Template(filename=os.path.join(root, "Templates/input_h_template.h"))
+        s = tmpl.render(**tk)
+        save_string = os.path.join(self.app_directory, 'DORY_network/inc/input.h') 
+        with open(save_string, "w") as f:
+            f.write(s)
