@@ -41,7 +41,7 @@ class Parser_ONNX_to_DORY:
         self.layers_accepted = layers_accepted
         self.layers_neglected = layers_neglected
         self.layers_to_node = layers_to_node
-        self.layers_supported_by_DORY_Frontend_IR = ["Convolution", "Pooling", "FullyConnected", "Addition", "QAddition", "Relu", "BNRelu", "Requant"]
+        self.layers_supported_by_DORY_Frontend_IR = ["Convolution", "Pooling", "FullyConnected", "Addition", "QAddition", "Relu", "BNRelu", "Requant", "BN"]
         self.rules = rules
         self.DORY_Graph = []
 
@@ -67,6 +67,8 @@ class Parser_ONNX_to_DORY:
             if node_iterating.op_type in self.layers_neglected:
                 for node in self.DORY_Graph[::-1]:
                     if int(node_iterating.output[0]) > int(node.get_parameter('output_index')) and node.get_parameter("name") != "Constant":
+                        if(node_iterating.op_type == 'Min'):
+                            continue
                         node.add_existing_parameter('output_index', node_iterating.output[0]) 
                         break
             # Adding a new layer

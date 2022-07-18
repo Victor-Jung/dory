@@ -27,6 +27,8 @@ class Pattern_rewriter:
     def execute(self, rule, i):
         if rule in ["ConvolutionBNRelu", "FullyConnectedBNRelu", "AdditionBNRelu", "QAdditionBNRelu", "PoolingBNRelu"]:
             self.NodeBNRelu_pattern_rewriter(i)
+        if rule in ["ConvolutionBN"]:
+            self.NodeBN_pattern_rewriter(i)
         if rule in ["PoolingRequant"]:
             self.NodeRequant_pattern_rewriter(i)
         if rule in ["ConvolutionRelu", "FullyConnectedRelu", "AdditionRelu", "QAdditionRelu", "PoolingRelu"]:
@@ -52,6 +54,26 @@ class Pattern_rewriter:
         for ele in sorted(i, reverse = True):
             del self.graph[ele]
         self.graph.insert(i[0], DORY_BNRelu_node)
+    
+    def NodeBN_pattern_rewriter(self, i):
+        DORY_BN_node = self.graph[i[0]]
+        DORY_BN_node.constant_bits = self.graph[i[1]].constant_bits
+        DORY_BN_node.name = "BN"+self.graph[i[0]].name
+        DORY_BN_node.op_type = "BN"+self.graph[i[0]].op_type
+        DORY_BN_node.output_index = self.graph[i[1]].output_index
+        DORY_BN_node.k = self.graph[i[1]].k
+        DORY_BN_node.l = self.graph[i[1]].l
+        DORY_BN_node.outshift = self.graph[i[1]].outshift
+        DORY_BN_node.min = self.graph[i[1]].min
+        DORY_BN_node.max = self.graph[i[1]].max
+        DORY_BN_node.constant_names.append("k")
+        DORY_BN_node.constant_names.append("l")
+        DORY_BN_node.constant_names.append("outshift")
+        DORY_BN_node.output_activation_bits = self.graph[i[1]].output_activation_bits
+        DORY_BN_node.output_activation_type = self.graph[i[1]].output_activation_type
+        for ele in sorted(i, reverse = True):
+            del self.graph[ele]
+        self.graph.insert(i[0], DORY_BN_node)
 
     def NodeRequant_pattern_rewriter(self, i):
         DORY_BNRelu_node = self.graph[i[0]]

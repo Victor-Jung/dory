@@ -440,10 +440,10 @@ void ${func_name}(
       0, 0,
       % endif
       out_mult, out_shift,
-      x_tile_size_w_exec, x_tile_size_h_exec, x_tile_size_nif_exec,
-      y_tile_size_w, y_tile_size_h, y_tile_size_nof,
-      ${fs2}, ${fs1},
-      p_t, p_b, p_l, p_r, ${stride}, ${stride},
+      x_tile_size_h_exec, x_tile_size_w_exec, x_tile_size_nif_exec,
+      y_tile_size_h, y_tile_size_w, y_tile_size_nof,
+      ${fs1}, ${fs2},
+      p_t, p_b, p_l, p_r, ${stride_x}, ${stride_y},
       ${FLAG_RELU}, ${FLAG_BATCHNORM}
       );
   % endif

@@ -39,6 +39,10 @@ class Pattern_rewriter:
             self.PADNode_pattern_rewriter(i)
         if rule == "QAdd":
             self.QAdd_pattern_rewriter(i)
+        if rule == "BN":
+            self.BN_pattern_rewriter(i)
+        if rule == "Embeddings":
+            self.Embeddings_pattern_rewriter(i)
         return self.graph
 
     def BNRelu_pattern_rewriter(self, i):
@@ -85,6 +89,48 @@ class Pattern_rewriter:
         for ele in sorted(i, reverse = True):
             del self.graph[ele]
         self.graph.insert(i[0], DORY_BNRelu_node)
+    
+    def BN_pattern_rewriter(self, i):
+        DORY_BN_node = DORY_node.DORY_node()
+        DORY_BN_node.name = "BN"
+        DORY_BN_node.op_type = "BN"
+        DORY_BN_node.input_indexes = self.graph[i[0]].input_indexes
+        DORY_BN_node.output_index = self.graph[i[-1]].output_index
+        DORY_BN_node.number_of_input_nodes = self.graph[i[0]].number_of_input_nodes
+        DORY_BN_node.number_of_input_constants = sum(self.graph[x].number_of_input_constants for x in i)
+        DORY_BN_node.branch_out = None
+        DORY_BN_node.branch_in = None
+        DORY_BN_node.branch_change = None
+        DORY_BN_node.branch_last = None
+
+        ### k ###
+        for key, value in self.graph[i[0]].__dict__.items():
+            if isinstance(value, dict):
+                k = value["value"]
+        ### l ###
+        for key, value in self.graph[i[1]].__dict__.items():
+            if isinstance(value, dict):
+                l = value["value"]
+        ### outshift ###
+        for key, value in self.graph[i[2]].__dict__.items():
+            if isinstance(value, dict):
+                outshift = (value["value"][0] if isinstance(value["value"].tolist(),list) else value["value"])
+
+        DORY_BN_node.k = {}
+        DORY_BN_node.k["value"] = k*1
+        DORY_BN_node.k["layout"] = ""
+        DORY_BN_node.l = {}
+        DORY_BN_node.l["value"] = l*1
+        DORY_BN_node.l["layout"] = ""
+        DORY_BN_node.outshift = {}
+        DORY_BN_node.outshift["value"] = round(np.log2(outshift))
+        DORY_BN_node.outshift["layout"] = ""
+        DORY_BN_node.min = self.graph[i[-1]].min
+        DORY_BN_node.max = self.graph[i[-1]].max
+        DORY_BN_node.constant_names = ["k", "l", "outshift"]
+        for ele in sorted(i, reverse = True):
+            del self.graph[ele]
+        self.graph.insert(i[0], DORY_BN_node)
 
     def Relu_pattern_rewriter(self, i):
         DORY_Relu_node = DORY_node.DORY_node()
@@ -152,7 +198,6 @@ class Pattern_rewriter:
         for ele in sorted(i, reverse = True):
             del self.graph[ele]
         self.graph.insert(i[0], DORY_Pad_node)
-
 
     def QAdd_pattern_rewriter(self, i):
         DORY_QAdd_node = self.graph[i[1]]

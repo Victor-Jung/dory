@@ -35,8 +35,8 @@ class onnx_manager(Parser_ONNX_to_DORY):
     # Used to manage the ONNX files. By now, supported Convolutions (PW and DW), Pooling, Fully Connected and Relu.
 
     def __init__(self, onnx, config_file):
-        layers_accepted = ['Conv', 'Pad', 'Mul', 'Add', 'Div', 'Constant', 'AveragePool', 'GlobalAveragePool', 'MaxPool', 'Cast', 'Clip', 'Floor', 'Flatten', 'Gemm', 'MatMul', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax']
-        layers_neglected = ['Cast', 'Floor', 'Flatten', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax']
+        layers_accepted = ['Conv', 'Pad', 'Mul', 'Add', 'Div', 'Constant', 'AveragePool', 'GlobalAveragePool', 'MaxPool', 'Cast', 'Clip', 'Floor', 'Flatten', 'Gemm', 'MatMul', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax', 'Max', 'Min', 'Transpose', 'RequantShift']
+        layers_neglected = ['Cast', 'Floor', 'Flatten', 'Shape', 'Gather', 'Unsqueeze', 'Concat', 'Reshape', 'Sigmoid', 'LogSoftmax', 'Min']
         layers_to_node = ['AveragePool', 'MaxPool', 'Conv', 'Gemm', 'MatMul', 'GlobalAveragePool']
         f = open(os.path.join(file_path, "rules.json"))
         rules = json.load(f)
@@ -86,18 +86,18 @@ class onnx_manager(Parser_ONNX_to_DORY):
         for i, node in enumerate(self.DORY_Graph):
             node.add_existing_parameter("weight_type", "int")
             node.add_existing_parameter("constant_type", "int")
-            node.add_existing_parameter("output_activation_type", "uint")
+            node.add_existing_parameter("output_activation_type", "int") #uint
             if i == len(self.DORY_Graph) -1:
                 node.add_existing_parameter("output_activation_type", "int")
-            node.add_existing_parameter("input_activation_type", "uint")
-            node.add_existing_parameter("bias_bits", 32)
+            node.add_existing_parameter("input_activation_type", "int") #uint
+            node.add_existing_parameter("bias_bits", 32) 
             if node.name in ["Convolution", "FullyConnected"]:
                 node.add_existing_parameter("weight_bits", 8)
-                node.add_existing_parameter("output_activation_bits", 32)
+                node.add_existing_parameter("output_activation_bits", 32) 
                 node.add_existing_parameter("input_activation_bits", 8)
             elif node.name in ["Addition"]:
-                node.add_existing_parameter("output_activation_bits", 32)
-                node.add_existing_parameter("input_activation_bits", 32)
+                node.add_existing_parameter("output_activation_bits", 32) 
+                node.add_existing_parameter("input_activation_bits", 32) 
             elif node.name in ["QAddition"]:
                 node.add_existing_parameter("constant_bits", self.BNRelu_bits)
                 node.add_existing_parameter("output_activation_bits", 8)
@@ -105,14 +105,14 @@ class onnx_manager(Parser_ONNX_to_DORY):
             elif node.name in ["Pooling"]:
                 node.add_existing_parameter("output_activation_bits", 8)
                 node.add_existing_parameter("input_activation_bits", 8)
-            elif node.name in ["Relu", "BNRelu", "Clip"]:
+            elif node.name in ["Relu", "BNRelu", "Clip", "BN"]:
                 node.add_existing_parameter("constant_bits", self.BNRelu_bits)
                 node.add_existing_parameter("output_activation_bits", 8)
-                node.add_existing_parameter("input_activation_bits", 32)
+                node.add_existing_parameter("input_activation_bits", 32) 
             elif node.name in [ "Mul", "Add", "Div", "Shift"]:
                 node.add_existing_parameter("constant_bits", self.BNRelu_bits)
-                node.add_existing_parameter("output_activation_bits", 32)
-                node.add_existing_parameter("input_activation_bits", 32)
+                node.add_existing_parameter("output_activation_bits", 32) 
+                node.add_existing_parameter("input_activation_bits", 32) 
 
     def add_data_layout(self):
         print("\nNEMO Frontend: Adding Data Layout.")

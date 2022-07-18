@@ -84,7 +84,7 @@ class Layer_node(DORY_node):
             Layer_parameters['dilations'] = [1, 1]
             Layer_parameters['group'] = 1
         Layer_parameters['pads'] = [0, 0, 0, 0]
-
+        
         ## 'kernel_shape', 'dilations', 'group', 'strides', 'pads'
         for attribute in node_iterating.attribute:
             if attribute.name in ['kernel_shape', 'dilations', 'group', 'strides', 'pads']:

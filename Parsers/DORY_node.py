@@ -87,9 +87,13 @@ class DORY_node:
                          'Gemm': 'FullyConnected', 
                          'MatMul': 'FullyConnected', 
                          'GlobalAveragePool': 'Pooling', 
-                         'Add': 'Addition'}
+                         'Add': 'Addition',
+                         'Max': 'Clip'}
         if node_iterating.op_type in mapping_names.keys():
             DORY_parameters['name'] = mapping_names[node_iterating.op_type]
+            #This is weird remove
+            if(node_iterating.op_type == 'Max'):
+                DORY_parameters['op_type'] = node_iterating.op_type
         else:
             DORY_parameters['name'] = node_iterating.op_type
         DORY_parameters['op_type'] = node_iterating.op_type
@@ -101,18 +105,24 @@ class DORY_node:
                 DORY_parameters['constant_names'].append(iterating_input)
             elif is_constant == 0:
                 DORY_parameters['input_indexes'].append(iterating_input)
-        DORY_parameters['output_index'] = node_iterating.output[0]
+        if node_iterating.op_type == 'Max':
+            for second_node in graph.graph.node:
+                if(second_node.op_type == 'Min'):
+                    if(node_iterating.output[0] == second_node.input[0]):
+                        DORY_parameters['output_index'] = second_node.output[0]
+        else:    
+            DORY_parameters['output_index'] = node_iterating.output[0]
         DORY_parameters['number_of_input_nodes'] = len(DORY_parameters['input_indexes'])
         DORY_parameters['number_of_input_constants'] = len(DORY_parameters['constant_names'])
         self.add_existing_dict_parameter(DORY_parameters)
 
         self.add_constants(node_iterating, graph)
-
+        
         if self.name == 'Addition' and len(self.input_indexes) == 1:
             self.name = node_iterating.op_type
 
         self.add_special_attributes(node_iterating)
-
+    
     def add_constants(self, node_iterating, graph):
         '''
         two ways for identifying constants:
@@ -140,6 +150,9 @@ class DORY_node:
         '''
         adding not expected and custom attributes (e.g., min and max in clip)
         '''
+        if node_iterating.op_type == 'Max':
+            self.__dict__['min'] = int(self.__dict__[self.__dict__['constant_names'][0]]['value'][0])
+            self.__dict__['max'] = int(127)
         for attribute in node_iterating.attribute:
             if attribute.name not in ['kernel_shape', 'dilations', 'group', 'strides', 'pads'] or self.name == "Pad":
                 if bool(attribute.i):

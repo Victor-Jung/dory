@@ -94,5 +94,41 @@
 			"3": {"inputs": ["1"],
 				"outputs":[]}
 		}
+	},
+	"BN": {
+		"number_of_nodes": 4,
+		"nodes_name": ["Mul", "Add", "Div", "Clip"],
+		"dependencies": {
+			"0": {"inputs": [],
+				"outputs":["1"]},
+			"1": {"inputs": ["0"],
+				"outputs":["2"]},
+			"2": {"inputs": ["1"],
+				"outputs":["3"]},
+			"3": {"inputs": ["2"],
+				"outputs":[]}
+		}
+	},
+	"Embeddings": {
+		"number_of_nodes": 7,
+		"nodes_name": ["Max", "Min", "Reshape", "Transpose", "RequantShift", "Add", "RequantShift"],
+		"dependencies": {
+			"0": {"inputs": [],
+				"outputs":["1"]},
+			"1": {"inputs": ["0"],
+				"outputs":["2"]},
+			"2": {"inputs": ["1"],
+				"outputs":["3"]},
+			"3": {"inputs": ["2"],
+				"outputs":["4"]},
+			"4": {"inputs": ["3"],
+				"outputs":["5"]},
+			"5": {"inputs": ["4"],
+				"outputs":["6"]},
+			"6": {"inputs": ["5"],
+				"outputs":["7"]},
+			"7": {"inputs": ["6"],
+				"outputs":[]}
+		}
 	}
 }

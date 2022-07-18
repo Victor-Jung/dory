@@ -171,7 +171,8 @@ def print_template_layer(node, layer_type, tmpl_dir, out_dir):
     tk['padding_bottom'] = padding_bottom
     tk['padding_left'] = padding_left
     tk['padding_right'] = padding_right
-    tk['stride'] = s[0]
+    tk['stride_x'] = s[0]
+    tk['stride_y'] = s[1]
 
     ################## NEED A REWRITING IN THIS TEMPLATE PART ######################
     #### VARIABLE CREATION FOR COMPATIBILITY WITH THE SECTION AFTER ################

@@ -9,6 +9,16 @@
 				"outputs":[]}
 		}
 	},
+	"ConvolutionBN": {
+		"number_of_nodes": 2,
+		"nodes_name": ["Convolution","BN"],
+		"dependencies": {
+			"0": {"inputs": [],
+				"outputs":["1"]},
+			"1": {"inputs": ["0"],
+				"outputs":[]}
+		}
+	},
 	"FullyConnectedBNRelu": {
 		"number_of_nodes": 2,
 		"nodes_name": ["FullyConnected","BNRelu"],
